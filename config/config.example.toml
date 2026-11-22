@@ -1,0 +1,75 @@
+# magiclogi — configuration de la Logitech MX Anywhere 2S (Bluetooth)
+#
+# Emplacement : ~/.config/magiclogi/config.toml
+# Après modification :  magiclogictl reload   (ou : launchctl kill HUP gui/$UID/com.jcbaptiste.magiclogi)
+# Vérifier sans appliquer :  magiclogid check
+#
+# Règle générale : une clé absente ou commentée = la souris n'est pas touchée
+# sur ce point. Le fichier vide laisse la souris telle quelle.
+
+[pointer]
+# Résolution du capteur, réglée DANS la souris (HID++), de 200 à 4000 par pas
+# de 50. Valeur d'usine : 1000. Une valeur hors pas est arrondie au plus proche.
+# L'accélération de macOS (Réglages > Souris > Vitesse) reste appliquée en plus.
+dpi = 1000
+
+[scroll]
+# Inverse le sens de la molette verticale, dans la souris seulement : le
+# trackpad garde son sens. Utile avec le « défilement naturel » de macOS activé
+# pour le trackpad mais pas souhaité à la souris. L'inclinaison (horizontale)
+# n'est pas concernée.
+invert = false
+
+[buttons]
+# Boutons reprogrammables :
+#   middle      bouton dédié derrière la molette (clic central d'origine)
+#   back        bouton latéral arrière (bouton 4 d'origine)
+#   forward     bouton latéral avant   (bouton 5 d'origine)
+#   tilt_left   inclinaison de la molette à gauche (défilement horizontal d'origine)
+#   tilt_right  inclinaison de la molette à droite (défilement horizontal d'origine)
+# (L'appui sur la molette bascule mécaniquement cranté/libre : non configurable.)
+#
+# Actions :
+#   "native"           comportement d'origine de la souris (défaut, rien n'est intercepté)
+#   "none"             bouton désactivé
+#   "gestures"         bouton gestuel (comme Options+) : clic, ou maintenir et
+#                      déplacer la souris ; voir [gestures]. Le pointeur ne
+#                      bouge pas pendant le maintien.
+#   "middle-click"     clic central
+#   "back" / "forward" précédent / suivant = boutons souris 4 / 5 (Safari, Finder,
+#                      navigateurs ; indépendant de la disposition du clavier)
+#   "button4" / "button5"  identiques à back / forward
+#   "mission-control", "app-expose" (fenêtres de l'app), "space-left",
+#   "space-right" (espace précédent / suivant), "show-desktop", "spotlight" :
+#                      envoient VOTRE raccourci système actuel (Réglages >
+#                      Clavier > Raccourcis clavier), relu à chaque appui ;
+#                      rien n'est envoyé si ce raccourci est désactivé
+#   "keys:cmd+shift+4" raccourci quelconque ; modificateurs cmd shift opt ctrl fn ;
+#                      touches a-z 0-9 f1-f12 up down left right space return tab
+#                      escape delete home end pageup pagedown et - = [ ] ; ' , . / \ `
+#                      Les caractères sont ceux de VOTRE clavier (AZERTY compris) :
+#                      "keys:cmd+a" envoie bien ⌘A. Un caractère qu'aucune touche
+#                      ne tape seule (ex. « [ » en AZERTY) prend la position QWERTY.
+#
+# Toute action autre que "native" ou "none" demande l'autorisation
+# Accessibilité ; sans elle, le bouton reste natif.
+middle = "native"
+back = "native"
+forward = "native"
+tilt_left = "native"
+tilt_right = "native"
+
+[gestures]
+# Utilisé par les boutons réglés sur "gestures". Mêmes actions que ci-dessus
+# (sauf "native" et "gestures" ; "none" désactive un geste). Les gestes
+# s'enchaînent sans relâcher : le premier au seuil, les suivants du même
+# maintien à 2,25 fois le seuil (un long glissé ne déclenche pas une rafale).
+click = "middle-click"      # appui bref sans déplacement (envoyé au relâché :
+                            # pas de maintien ni de glisser avec le clic central)
+up = "mission-control"
+down = "app-expose"
+left = "space-left"
+right = "space-right"
+# Déplacement à atteindre, en points du capteur (130 ≈ 2,7 mm à 1200 DPI) :
+# 20 à 5000. Plus haut = moins sensible.
+threshold = 130

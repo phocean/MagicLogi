@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  magiclogi user LaunchAgent (template).
+  scripts/install.sh replaces @DAEMON_PATH@ with the XML-escaped absolute path
+  of the installed daemon and writes the result to
+  ~/Library/LaunchAgents/com.jcbaptiste.magiclogi.plist
+-->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.jcbaptiste.magiclogi</string>
+
+	<key>ProgramArguments</key>
+	<array>
+		<string>@DAEMON_PATH@</string>
+		<string>run</string>
+	</array>
+
+	<!-- Start at login (and when the agent is bootstrapped). -->
+	<key>RunAtLoad</key>
+	<true/>
+
+	<!-- Restart only after an abnormal exit (crash, nonzero status).
+	     A clean exit 0 (SIGTERM) keeps it stopped. -->
+	<key>KeepAlive</key>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+	</dict>
+
+	<!-- Short: a diverted button is silent until the agent is back
+	     (diversion survives a crash, see docs/etude-faisabilite.md §5). -->
+	<key>ThrottleInterval</key>
+	<integer>5</integer>
+
+	<!-- Input path: no CPU/IO throttling by the scheduler. -->
+	<key>ProcessType</key>
+	<string>Interactive</string>
+
+	<!-- Only in a graphical login session (posting events needs one). -->
+	<key>LimitLoadToSessionType</key>
+	<string>Aqua</string>
+
+	<!-- Logging goes to os_log (subsystem com.jcbaptiste.magiclogi). -->
+	<key>StandardOutPath</key>
+	<string>/dev/null</string>
+	<key>StandardErrorPath</key>
+	<string>/dev/null</string>
+</dict>
+</plist>

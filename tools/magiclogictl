@@ -1,0 +1,109 @@
+#!/bin/bash
+# magiclogictl — control the magiclogi agent.
+#
+#   magiclogictl status             agent state, battery, DPI, diverted buttons
+#   magiclogictl start|stop|restart
+#   magiclogictl reload             re-read ~/.config/magiclogi/config.toml
+#   magiclogictl check              validate the configuration file
+#   magiclogictl log [MINUTES]      agent log (default: last 60 minutes)
+#   magiclogictl diag               read-only HID++ report on the mouse
+#   magiclogictl events [SECONDS] [--motion] [--divert]
+#                                   print what the buttons and wheel send
+#   magiclogictl reset              native buttons, no inversion, default DPI
+#                                   (stop the agent first, or it re-applies)
+#
+# diag, events and reset run magiclogid as a one-shot launchd job: run
+# directly from a terminal, macOS would check the TERMINAL's Input
+# Monitoring permission instead of magiclogid's own.
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Jean-Christophe Baptiste
+set -euo pipefail
+
+LABEL=com.jcbaptiste.magiclogi
+BIN=${MAGICLOGI_BIN:-$HOME/.local/bin/magiclogid}
+DOMAIN=gui/$(id -u)
+SERVICE=$DOMAIN/$LABEL
+AGENT=$HOME/Library/LaunchAgents/$LABEL.plist
+
+die() { printf 'error: %s\n' "$*" >&2; exit 1; }
+usage() { awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"; }
+loaded() { launchctl print "$SERVICE" >/dev/null 2>&1; }
+
+oneshot() {
+    [ -x "$BIN" ] || die "$BIN is not installed"
+    local label=$LABEL.oneshot dir out tailpid a
+    dir=$(mktemp -d "${TMPDIR:-/tmp}/magiclogi.XXXXXX")
+    out=$dir/out.txt
+    : > "$out"
+    trap 'launchctl bootout "$DOMAIN/'"$label"'" >/dev/null 2>&1 || true; rm -rf "'"$dir"'"' EXIT
+    xml() { printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
+    {
+        printf '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+        printf '<plist version="1.0"><dict>\n<key>Label</key><string>%s</string>\n' "$label"
+        printf '<key>ProgramArguments</key><array><string>%s</string>' "$(xml "$BIN")"
+        for a in "$@"; do printf '<string>%s</string>' "$(xml "$a")"; done
+        printf '</array>\n<key>RunAtLoad</key><true/>\n'
+        printf '<key>StandardOutPath</key><string>%s</string>\n' "$(xml "$out")"
+        printf '<key>StandardErrorPath</key><string>%s</string>\n' "$(xml "$out")"
+        printf '<key>LimitLoadToSessionType</key><string>Aqua</string>\n</dict></plist>\n'
+    } > "$dir/job.plist"
+    launchctl bootout "$DOMAIN/$label" >/dev/null 2>&1 || true
+    launchctl bootstrap "$DOMAIN" "$dir/job.plist"
+    tail -n +1 -f "$out" &
+    tailpid=$!
+    sleep 0.3
+    while launchctl print "$DOMAIN/$label" 2>/dev/null | grep -q 'state = running'; do sleep 0.3; done
+    sleep 0.3
+    kill "$tailpid" 2>/dev/null || true
+    wait "$tailpid" 2>/dev/null || true
+}
+
+cmd=${1:-status}
+[ $# -gt 0 ] && shift
+case $cmd in
+    status)
+        if loaded; then
+            pid=$(launchctl print "$SERVICE" 2>/dev/null | awk '/^\tpid = / { print $3 }')
+            echo "launchd: loaded${pid:+, pid $pid}"
+        else
+            echo "launchd: not loaded"
+        fi
+        "$BIN" status || true ;;
+    start)
+        [ -f "$AGENT" ] || die "$AGENT missing: run make install"
+        loaded || launchctl bootstrap "$DOMAIN" "$AGENT"
+        launchctl kickstart "$SERVICE" ;;
+    stop)
+        if loaded; then
+            launchctl bootout "$SERVICE" || true
+            for _ in $(seq 1 50); do loaded || break; sleep 0.1; done
+        fi ;;
+    restart)
+        loaded || { [ -f "$AGENT" ] && launchctl bootstrap "$DOMAIN" "$AGENT"; }
+        launchctl kickstart -k "$SERVICE" ;;
+    reload)
+        "$BIN" check
+        launchctl kill HUP "$SERVICE" ;;
+    check)
+        "$BIN" check "$@" ;;
+    log)
+        minutes=${1:-60}
+        case $minutes in ''|*[!0-9]*) die "minutes must be a number" ;; esac
+        log show --style compact --info --last "${minutes}m" \
+            --predicate 'subsystem == "com.jcbaptiste.magiclogi"' ;;
+    diag)
+        oneshot diag ;;
+    events)
+        for a in "$@"; do
+            if [ "$a" = --divert ] && loaded; then
+                die "events --divert would fight the agent: stop it first (magiclogictl stop)"
+            fi
+        done
+        oneshot events "$@" ;;
+    reset)
+        if loaded; then die "stop the agent first (magiclogictl stop): it would re-apply the configuration"; fi
+        oneshot reset ;;
+    -h|--help|help) usage ;;
+    *) usage >&2; exit 64 ;;
+esac
