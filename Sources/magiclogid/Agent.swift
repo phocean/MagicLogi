@@ -507,7 +507,11 @@ final class Agent {
 
     private func writeStatus(stopped: Bool = false) {
         var lines = ["updated=\(ISO8601DateFormatter().string(from: Date()))"]
+        lines.append("version=\(magiclogiVersion)")
         lines.append("agent=\(stopped ? "stopped" : "running")")
+        let im = IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
+        lines.append("input_monitoring=\(im ? "granted" : "missing")")
+        lines.append("accessibility=\(!config.needsEventPosting ? "not-needed" : Injector.allowed ? "granted" : "missing")")
         lines.append("connected=\(device != nil ? "yes" : "no")")
         if waitingDevice != nil { lines.append("waiting=input-monitoring") }
         if let b = battery { lines.append("battery=\(b.level)%"); lines.append("battery_status=\(b.statusName)") }

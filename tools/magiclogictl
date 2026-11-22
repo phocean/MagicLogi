@@ -2,6 +2,10 @@
 # magiclogictl — control the magiclogi agent.
 #
 #   magiclogictl status             agent state, battery, DPI, diverted buttons
+#   magiclogictl permissions        restart the agent, report its two macOS
+#                                   permissions, open the first missing one
+#                                   (exit status 3 while one is missing)
+#   magiclogictl version
 #   magiclogictl start|stop|restart
 #   magiclogictl reload             re-read ~/.config/magiclogi/config.toml
 #   magiclogictl check              validate the configuration file
@@ -25,6 +29,7 @@ BIN=${MAGICLOGI_BIN:-$HOME/.local/bin/magiclogid}
 DOMAIN=gui/$(id -u)
 SERVICE=$DOMAIN/$LABEL
 AGENT=$HOME/Library/LaunchAgents/$LABEL.plist
+STATUS_FILE=$HOME/.local/state/magiclogi/status
 
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 usage() { awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"; }
@@ -59,6 +64,53 @@ oneshot() {
     wait "$tailpid" 2>/dev/null || true
 }
 
+status_value() { sed -n "s/^$1=//p" "$STATUS_FILE" 2>/dev/null | head -n 1; }
+
+cmd_permissions() {
+    local n=0 im ax pane name first="" missing=0
+    [ -f "$AGENT" ] || die "$AGENT missing: install first"
+    # Input Monitoring granted while the agent runs only takes effect after a
+    # restart: always restart, then wait for its first status (5 s at most).
+    if loaded; then
+        launchctl bootout "$SERVICE" >/dev/null 2>&1 || true
+        for _ in $(seq 1 50); do loaded || break; sleep 0.1; done
+    fi
+    rm -f "$STATUS_FILE"
+    launchctl bootstrap "$DOMAIN" "$AGENT"
+    while [ ! -s "$STATUS_FILE" ] && [ "$n" -lt 50 ]; do n=$((n + 1)); sleep 0.1; done
+    [ -s "$STATUS_FILE" ] || die "the agent did not start (see: magiclogictl log)"
+    sleep 2   # let it open the mouse and apply the configuration
+    im=$(status_value input_monitoring)
+    ax=$(status_value accessibility)
+    echo "Input Monitoring: ${im:-?}"
+    echo "Accessibility:    ${ax:-?}"
+    # System Settings has a single window: open only the first missing pane.
+    for pane in "ListenEvent:Input Monitoring:$im" "Accessibility:Accessibility:$ax"; do
+        case ${pane##*:} in
+            granted|not-needed) ;;
+            *)  missing=$((missing + 1))
+                [ -z "$first" ] || continue
+                name=${pane#*:}; first=${name%:*}
+                open "x-apple.systempreferences:com.apple.preference.security?Privacy_${pane%%:*}" \
+                    || echo "Could not open System Settings ($first)." >&2 ;;
+        esac
+    done
+    if [ "$missing" -eq 0 ]; then
+        echo "All permissions granted."
+        return 0
+    fi
+    cat <<MSG
+
+System Settings is open on $first: turn on magiclogid.
+If it is not listed, click "+", press Cmd+Shift+G, type
+  $BIN
+and press Return, then Open. If an old magiclogid entry stays off after a
+reinstall, remove it with "-".
+Then run "magiclogictl permissions" again.
+MSG
+    return 3
+}
+
 cmd=${1:-status}
 [ $# -gt 0 ] && shift
 case $cmd in
@@ -70,6 +122,10 @@ case $cmd in
             echo "launchd: not loaded"
         fi
         "$BIN" status || true ;;
+    permissions)
+        cmd_permissions ;;
+    version)
+        "$BIN" --version ;;
     start)
         [ -f "$AGENT" ] || die "$AGENT missing: run make install"
         loaded || launchctl bootstrap "$DOMAIN" "$AGENT"

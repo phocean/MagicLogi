@@ -4,7 +4,9 @@
 import Foundation
 import MagicLogiCore
 
-let magiclogiVersion = "0.1.0"
+/// Single source of truth: CFBundleShortVersionString of the Info.plist
+/// embedded in the binary (scripts read the same file).
+let magiclogiVersion = (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "?"
 
 func printUsage() {
     print("""
