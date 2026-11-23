@@ -143,6 +143,13 @@ réinstallation. Le comportement par défaut reste celui de MagicTrackpoint.
   renvoie `0x1000` sur ce modèle.
 - Le DPI et l'inversion restent dans la souris après arrêt de l'agent jusqu'au
   prochain cycle d'alimentation ou `magiclogictl reset`.
+- Observé une fois (1.0.0, 2026-11-23) : souris reconnectée après plus de 5 h
+  de veille profonde, configuration réappliquée et relue correcte, mais aucun
+  événement des boutons détournés (ni leur clic natif) jusqu'à un nouveau
+  détournement. Cause inconnue (lien Bluetooth encore en renégociation).
+  Depuis 1.0.1, les détournements sont réécrits de zéro 5 s après chaque
+  reconnexion (7 s après un réveil du Mac). Pendant ces 5 s, le défaut peut
+  subsister ; recours : `magiclogictl restart`.
 
 ## 6. Tests et mesures
 
@@ -173,10 +180,14 @@ Plus : `bash -n` des scripts, `plutil -lint` du LaunchAgent.
 | Accessibilité accordée pendant l'exécution | détectée (après correctif `AXIsProcessTrusted`) |
 | CPU au repos (60 s) | 0,0 %, 0,05 s de CPU, 1 réveil, 5 Mo (empreinte), 14,9 Mo RSS |
 | Aller-retour HID++ | 20 à 450 ms (radio BLE en veille au premier échange) |
+| Reconnexion après veille profonde de la souris (1.0.0) | boutons détournés muets, réparé par `restart` ; voir les limites |
+| 1.0.1 : extinction/rallumage de la souris | réécriture des détournements à +5 s, gestes OK (utilisateur) |
+| 1.0.1 : veille d'une minute puis réveil du Mac | réécriture à +7 s, gestes OK (utilisateur) |
 
 ### Restant à valider par l'utilisateur
 
-- Mise en veille puis réveil du Mac (réapplication prévue 2 s après le réveil).
+- Reconnexion après une longue veille de la souris (plusieurs heures) avec la
+  1.0.1 : le cas qui a échoué en 1.0.0, non reproductible sur commande.
 - Redémarrage du Mac (démarrage à l'ouverture de session).
 - Latence perçue sur une longue durée ; stabilité mémoire sur plusieurs jours
   (`ps -o rss= -p $(pgrep -f 'magiclogid run')`).

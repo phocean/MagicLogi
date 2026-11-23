@@ -48,6 +48,8 @@ final class Agent {
     private var applyPending = false
     private var applyFailures = 0
     private var applyWork: DispatchWorkItem?
+    /// Next apply rewrites the diversions from scratch (see scheduleRefresh).
+    private var refreshDiversion = false
     private var stopping = false
     private var permissionTimer: Timer?
     private var askedAccessibility = false
@@ -148,6 +150,23 @@ final class Agent {
         applyFailures = 0
         dev.onNotification = { [weak self] msg in self?.handleNotification(msg) }
         scheduleApply(after: 0.3)
+        scheduleRefresh()
+    }
+
+    /// Observed once (2026-11-23): after the mouse reconnected from its long
+    /// sleep, the diversion written 1.6 s later read back as set, yet the mouse
+    /// sent no event for the diverted buttons (nor their native click) until
+    /// they were undiverted and diverted again. Cause unknown; the Bluetooth
+    /// link was still being renegotiated. So, once the link has settled, the
+    /// diversions are rewritten from scratch. A few requests, once per
+    /// reconnection or wake; nothing at rest.
+    private func scheduleRefresh(after delay: TimeInterval = 5) {
+        guard let dev = device else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self, weak dev] in
+            guard let self, let dev, self.device === dev, !self.stopping else { return }
+            self.refreshDiversion = true
+            self.scheduleApply(after: 0)
+        }
     }
 
     private func deviceRemoved(_ hid: IOHIDDevice) {
@@ -259,7 +278,9 @@ final class Agent {
     private func applyButtons(_ dev: LogiDevice) throws {
         guard try dev.featureIndex(.reprogControlsV4) != nil else { return }
         let canPost = Injector.allowed
+        let refresh = refreshDiversion
         var blocked: [String] = []
+        var refreshed: [String] = []
         for cid in managedControlIDs where presentControls.contains(cid) {
             let action = Control(cid: cid).map { config.action(for: $0) } ?? .native
             var want = action.needsDiversion
@@ -274,8 +295,16 @@ final class Agent {
             if rep.diverted != want || rep.rawXY != (want && wantRaw) {
                 _ = try dev.call(.reprogControlsV4, 3, ControlReporting.setDivertParams(cid: cid, divert: want, rawXY: wantRaw))
                 log.notice("\(ControlID.name(cid), privacy: .public): \(want ? (wantRaw ? "diverted with motion (gestures)" : "diverted") : "native", privacy: .public)")
+            } else if refresh && want {
+                _ = try dev.call(.reprogControlsV4, 3, ControlReporting.setDivertParams(cid: cid, divert: false))
+                _ = try dev.call(.reprogControlsV4, 3, ControlReporting.setDivertParams(cid: cid, divert: true, rawXY: wantRaw))
+                refreshed.append(Control(cid: cid)?.rawValue ?? "?")
             }
             if want { diverted.insert(cid) } else { diverted.remove(cid) }
+        }
+        if refresh {
+            refreshDiversion = false
+            if !refreshed.isEmpty { log.notice("diversion rewritten after the link settled: \(refreshed.joined(separator: ","), privacy: .public)") }
         }
         if !blocked.isEmpty {
             log.error("Accessibility not granted: \(blocked.joined(separator: ","), privacy: .public) left native until it is (System Settings > Privacy & Security > Accessibility > magiclogid)")
@@ -360,6 +389,7 @@ final class Agent {
             releaseHeld()
             diverted = []
             scheduleApply(after: 0.2)
+            scheduleRefresh()
         } else if idx == dev.cachedIndex(.batteryStatus), msg.function == 0 {
             if let b = BatteryStatus(params: msg.params) { updateBattery(b) }
         }
@@ -438,6 +468,7 @@ final class Agent {
                 log.info("system woke: re-applying")
                 applyFailures = 0
                 scheduleApply(after: 2)
+                scheduleRefresh(after: 7)
             }
         default:
             break
