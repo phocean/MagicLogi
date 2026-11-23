@@ -5,7 +5,7 @@
 # silicon, Xcode (Swift). Run "make help" for the list of targets.
 
 VERSION := $(shell plutil -extract CFBundleShortVersionString raw -o - Sources/magiclogid/Info.plist 2>/dev/null)
-NOTARY_PROFILE ?= magiclogi
+NOTARY_PROFILE ?= magictrackpoint
 
 .PHONY: all build test check install uninstall dmg release clean help
 
@@ -27,7 +27,7 @@ help:
 	@echo "Release (needs a Developer ID Application certificate):"
 	@echo "  make dmg         dist/MagicLogi-$(VERSION).dmg, signed, not notarized"
 	@echo "  make release     same, then notarized by Apple and stapled"
-	@echo "                   (NOTARY_PROFILE=<notarytool profile>, default magiclogi)"
+	@echo "                   (NOTARY_PROFILE=<notarytool profile>, default magictrackpoint)"
 
 build:
 	swift build -c release --arch arm64

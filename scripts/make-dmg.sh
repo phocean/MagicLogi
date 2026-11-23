@@ -13,9 +13,11 @@
 # Environment (optional):
 #   MAGICLOGI_DEVELOPER_ID    signing identity, SHA-1 or name. Default: the
 #                             first "Developer ID Application:" identity.
-#   MAGICLOGI_NOTARY_PROFILE  notarytool keychain profile (default: magiclogi),
-#                             created once with:
-#                               xcrun notarytool store-credentials magiclogi \
+#   MAGICLOGI_NOTARY_PROFILE  notarytool keychain profile (default:
+#                             magictrackpoint, the maintainer's existing one;
+#                             the credentials are per account, not per app).
+#                             To create one:
+#                               xcrun notarytool store-credentials <name> \
 #                                 --apple-id <your Apple ID> --team-id <your team ID>
 #
 # Network: signing contacts Apple's timestamp server; --notarize uploads the
@@ -28,7 +30,7 @@ set -euo pipefail
 LABEL=com.jcbaptiste.magiclogi
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 VERSION=$(plutil -extract CFBundleShortVersionString raw -o - "$ROOT/Sources/magiclogid/Info.plist")
-PROFILE=${MAGICLOGI_NOTARY_PROFILE:-magiclogi}
+PROFILE=${MAGICLOGI_NOTARY_PROFILE:-magictrackpoint}
 NAME=MagicLogi-$VERSION
 DIST=$ROOT/dist
 STAGE=$DIST/stage/$NAME
