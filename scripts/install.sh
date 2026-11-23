@@ -204,6 +204,10 @@ One-time permissions, in System Settings > Privacy & Security:
 Commands: magiclogictl status | reload | restart | log | check | diag
 Config:   $CONFIG
 EOF
+# Logitech software that takes the mouse over (see Conflicts.swift).
+if ! conflict=$("$DAEMON" conflicts); then
+    printf '\n%s\n' "$conflict" >&2
+fi
 case ":$PATH:" in
     *":$BIN_DIR:"*) ;;
     *) printf '\nNOTE: %s is not in your PATH. Add to ~/.zshrc:\n  export PATH="$PATH:$HOME/.local/bin"\n' "$BIN_DIR" ;;

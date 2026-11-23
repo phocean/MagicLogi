@@ -1,7 +1,8 @@
 #!/bin/bash
 # magiclogictl — control the magiclogi agent.
 #
-#   magiclogictl status             agent state, battery, DPI, diverted buttons
+#   magiclogictl status             agent state, battery, DPI, diverted buttons,
+#                                   conflicting Logitech software
 #   magiclogictl permissions        restart the agent, report its two macOS
 #                                   permissions, open the first missing one
 #                                   (exit status 3 while one is missing)
@@ -121,7 +122,8 @@ case $cmd in
         else
             echo "launchd: not loaded"
         fi
-        "$BIN" status || true ;;
+        "$BIN" status || true
+        "$BIN" conflicts || true ;;
     permissions)
         cmd_permissions ;;
     version)

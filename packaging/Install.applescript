@@ -33,6 +33,18 @@ on run
 		return
 	end try
 
+	-- Logitech software that takes the mouse over: exit status 2.
+	try
+		do shell script quoted form of daemon & " conflicts >&2"
+	on error errText number errNum
+		if errNum is 2 then
+			activate
+			display dialog errText & return & return & ¬
+				"MagicLogi stays installed; the remapped buttons will work once that software is removed." ¬
+				buttons {"OK"} default button "OK" with icon caution with title appTitle
+		end if
+	end try
+
 	set msg to "MagicLogi is installed and running." & return & return & ¬
 		"It needs the macOS permission Input Monitoring (and Accessibility if you remap a button). Click Continue: System Settings opens on the right page."
 	repeat

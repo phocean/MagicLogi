@@ -99,7 +99,7 @@ Named actions such as `mission-control` send **your** current macOS shortcut;
 
 | Command | Effect |
 |---|---|
-| `magiclogictl status` | state, battery, DPI, remapped buttons, permissions |
+| `magiclogictl status` | state, battery, DPI, remapped buttons, permissions, conflicting Logitech software |
 | `magiclogictl permissions` | restart, report and open missing permissions |
 | `magiclogictl reload` | re-read the configuration |
 | `magiclogictl start` / `stop` / `restart` | control the agent |
@@ -107,6 +107,33 @@ Named actions such as `mission-control` send **your** current macOS shortcut;
 | `magiclogictl diag` | read-only HID++ report (features, DPI, controls, battery) |
 | `magiclogictl events [s] [--divert]` | show what the buttons and wheel send |
 | `magiclogictl reset` | native buttons, no inversion, factory DPI (agent stopped) |
+
+## If the buttons stop responding
+
+**Leftover Logitech software.** *Logi Plugin Service*, installed by Logi
+Options+ in `/Applications/Utilities` and left behind when Options+ is
+uninstalled, connects to the mouse each time the display turns on and takes
+the remapped buttons over: they go silent. MagicLogi reports it in
+`magiclogictl status` (`conflicts=…`), its log and the installer. Remove it
+(administrator password):
+
+```bash
+sudo rm -rf /Applications/Utilities/LogiPluginService.app "/Library/Application Support/Logi"
+```
+
+```bash
+sudo pkgutil --forget com.logi.installer.pluginservice.package
+```
+
+```bash
+sudo pkgutil --forget com.logi.installer.pluginservice.media.package
+```
+
+Then `magiclogictl restart`. Uninstall Logi Options+ itself too, with its own
+uninstaller.
+
+**Agent killed.** `launchd` restarts it in under a second and it takes over
+again. Last resort: switch the mouse off and on, or `magiclogictl reset`.
 
 ## Uninstall
 

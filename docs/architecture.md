@@ -143,23 +143,45 @@ réinstallation. Le comportement par défaut reste celui de MagicTrackpoint.
   renvoie `0x1000` sur ce modèle.
 - Le DPI et l'inversion restent dans la souris après arrêt de l'agent jusqu'au
   prochain cycle d'alimentation ou `magiclogictl reset`.
-- Observé une fois (1.0.0, 2026-11-23) : souris reconnectée après plus de 5 h
-  de veille profonde, configuration réappliquée et relue correcte, mais aucun
-  événement des boutons détournés (ni leur clic natif) jusqu'à un nouveau
-  détournement. Cause inconnue (lien Bluetooth encore en renégociation).
-  Depuis 1.0.1, les détournements sont réécrits de zéro 5 s après chaque
-  reconnexion (7 s après un réveil du Mac). Pendant ces 5 s, le défaut peut
-  subsister ; recours : `magiclogictl restart`.
+- **Logiciel Logitech en concurrence** (vérifié le 2026-11-23). *Logi Plugin
+  Service* (`/Applications/Utilities/LogiPluginService.app`, installé par
+  Logi Options+ et laissé en place par sa désinstallation) démarre à
+  l'ouverture de session et se connecte à la souris en Bluetooth (GATT,
+  `LogiPluginServiceExt` dans les journaux de `bluetoothd`) à chaque
+  allumage de l'écran. Dès lors la souris lui envoie les événements des
+  boutons détournés : ils deviennent muets (ni action ni clic natif) alors
+  que leurs drapeaux se relisent « détourné ». Un nouveau détournement par
+  l'agent rend la main jusqu'à la connexion suivante. Preuve : relance
+  volontaire du service, connexion à 13:05:41, boutons muets aussitôt ;
+  service arrêté et désinstallé, plus aucune connexion ni panne. C'était la
+  cause des pannes « au retour devant le Mac » de 1.0.0 et 1.0.1 (la
+  réécriture des détournements à +5 s ajoutée en 1.0.1 ne l'évitait que
+  lorsqu'elle passait après cette connexion ; elle reste en filet de
+  sécurité). Il n'est pas possible de le neutraliser sans droits
+  administrateur ni sans toucher à un autre logiciel : l'agent **le
+  signale** (journal, `magiclogictl status` ligne `conflicts=`, installeur).
+  Il teste seulement l'existence de quatre chemins fixes (Logi Plugin
+  Service, Logi Options+, Logi Options, G HUB ; seul le premier a été testé)
+  au démarrage, à la connexion et au réveil ; aucune liste de processus n'est
+  lue. Remède : désinstaller ce logiciel (README, « Si un bouton ne répond
+  plus »).
+- Une **demande de mot de passe** à l'écran (saisie sécurisée,
+  `kCGSSessionSecureInputPID`) fait refuser par macOS l'écriture vers la
+  souris (`IOHIDDeviceSetReport`, `0xE00002E2`), dont le périphérique a
+  l'usage « clavier » : pendant ce temps la configuration ne peut pas être
+  appliquée (journal : erreurs d'écriture). Une fois la fenêtre fermée,
+  `magiclogictl restart` l'applique (vérifié).
 
 ## 6. Tests et mesures
 
 ### Automatisés (`make test`)
 
-30 tests XCTest : trames HID++ (encodage, réponses, erreurs, rejets), décodage
+33 tests XCTest : trames HID++ (encodage, réponses, erreurs, rejets), décodage
 des charges **réellement lues sur la souris** (liste DPI, contrôles,
 rapports), batterie, molette, mouvement, reconnaissance de gestes, TOML
 (valides et 15 cas d'erreur), configuration stricte, actions, raccourcis système
-(entrées réelles de ce Mac), suivi des boutons, validité de l'exemple fourni.
+(entrées réelles de ce Mac), suivi des boutons, validité de l'exemple fourni, détection des logiciels
+Logitech en concurrence (chemins fixes seulement).
 Plus : `bash -n` des scripts, `plutil -lint` du LaunchAgent.
 
 ### Observés sur le matériel (2026-11-22/23, macOS 27.3, firmware MPM13.00 B0003)
@@ -180,14 +202,18 @@ Plus : `bash -n` des scripts, `plutil -lint` du LaunchAgent.
 | Accessibilité accordée pendant l'exécution | détectée (après correctif `AXIsProcessTrusted`) |
 | CPU au repos (60 s) | 0,0 %, 0,05 s de CPU, 1 réveil, 5 Mo (empreinte), 14,9 Mo RSS |
 | Aller-retour HID++ | 20 à 450 ms (radio BLE en veille au premier échange) |
-| Reconnexion après veille profonde de la souris (1.0.0) | boutons détournés muets, réparé par `restart` ; voir les limites |
+| Reconnexion après veille profonde de la souris (1.0.0) | boutons détournés muets, réparé par `restart` ; cause : Logi Plugin Service (voir les limites) |
 | 1.0.1 : extinction/rallumage de la souris | réécriture des détournements à +5 s, gestes OK (utilisateur) |
 | 1.0.1 : veille d'une minute puis réveil du Mac | réécriture à +7 s, gestes OK (utilisateur) |
+| 1.0.1 : retour après une longue absence | boutons muets ; Logi Plugin Service connecté à l'allumage de l'écran (journaux `bluetoothd`) |
+| Relance volontaire de Logi Plugin Service | connexion à la souris, boutons muets aussitôt (utilisateur) ; `restart` les rend |
+| Logi Plugin Service désinstallé | plus aucune connexion de sa part, boutons détournés |
+| 1.0.2 : détection des logiciels en concurrence | `conflicts=none` une fois désinstallé ; tests unitaires pour le cas présent |
 
 ### Restant à valider par l'utilisateur
 
-- Reconnexion après une longue veille de la souris (plusieurs heures) avec la
-  1.0.1 : le cas qui a échoué en 1.0.0, non reproductible sur commande.
+- Reconnexion après une longue veille de la souris (plusieurs heures), Logi
+  Plugin Service désinstallé.
 - Redémarrage du Mac (démarrage à l'ouverture de session).
 - Latence perçue sur une longue durée ; stabilité mémoire sur plusieurs jours
   (`ps -o rss= -p $(pgrep -f 'magiclogid run')`).

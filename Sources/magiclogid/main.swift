@@ -13,6 +13,8 @@ func printUsage() {
     usage: magiclogid [run] [--config FILE]   run the agent (default; started by launchd)
            magiclogid check [--config FILE]  validate the configuration and exit
            magiclogid status                 last state written by the agent
+           magiclogid conflicts              warn about Logitech software that takes the
+                                             mouse over (exit status 2 if any is installed)
            magiclogid diag                   read-only HID++ report on the Logitech devices
            magiclogid events [SECONDS] [--motion] [--divert]
                                              print button and wheel reports (default 30 s)
@@ -56,6 +58,13 @@ func runStatus() -> Int32 {
     return 0
 }
 
+func runConflicts() -> Int32 {
+    let found = Conflicts.installed { FileManager.default.fileExists(atPath: $0) }
+    guard let w = Conflicts.warning(found) else { return 0 }
+    print("WARNING: \(w)")
+    return 2
+}
+
 let argv = Array(CommandLine.arguments.dropFirst())
 let command = argv.first.flatMap { $0.hasPrefix("--config") ? nil : $0 } ?? "run"
 let rest = argv.first == command ? Array(argv.dropFirst()) : argv
@@ -66,6 +75,7 @@ case "run":
     Agent(configPath: path).run()
 case "check": exit(runCheck(rest))
 case "status": exit(runStatus())
+case "conflicts": exit(runConflicts())
 case "diag": exit(runDiag(args: rest))
 case "events": exit(runEvents(args: rest))
 case "reset": exit(runReset())

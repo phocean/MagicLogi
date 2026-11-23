@@ -53,6 +53,7 @@ final class Agent {
     private var stopping = false
     private var permissionTimer: Timer?
     private var askedAccessibility = false
+    private var conflicts: [ConflictingSoftware] = []
 
     private var signalSources: [DispatchSourceSignal] = []
     private var powerConnection: io_connect_t = 0
@@ -71,6 +72,7 @@ final class Agent {
         log.notice("magiclogid \(magiclogiVersion, privacy: .public) starting, config \(shownPath, privacy: .public)")
         loadConfig(initial: true)
         log.notice("permissions: input monitoring \(IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted ? "yes" : "no", privacy: .public), accessibility \(AXIsProcessTrusted() ? "yes" : "no", privacy: .public), post events \(CGPreflightPostEventAccess() ? "yes" : "no", privacy: .public)")
+        checkConflicts()
         installSignalHandlers()
         registerForPower()
 
@@ -149,17 +151,18 @@ final class Agent {
         diverted = []
         applyFailures = 0
         dev.onNotification = { [weak self] msg in self?.handleNotification(msg) }
+        checkConflicts()
         scheduleApply(after: 0.3)
         scheduleRefresh()
     }
 
-    /// Observed once (2026-11-23): after the mouse reconnected from its long
-    /// sleep, the diversion written 1.6 s later read back as set, yet the mouse
-    /// sent no event for the diverted buttons (nor their native click) until
-    /// they were undiverted and diverted again. Cause unknown; the Bluetooth
-    /// link was still being renegotiated. So, once the link has settled, the
-    /// diversions are rewritten from scratch. A few requests, once per
-    /// reconnection or wake; nothing at rest.
+    /// Once the link has settled, the diversions are rewritten from scratch
+    /// (undivert, divert). Added in 1.0.1 after the buttons went silent while
+    /// still reading as diverted; the cause turned out to be Logi Plugin
+    /// Service taking them over (see Conflicts), which this does not prevent:
+    /// it only helps when that service connected before the rewrite. Kept as
+    /// a cheap safety net: a few requests per reconnection or wake, nothing at
+    /// rest.
     private func scheduleRefresh(after delay: TimeInterval = 5) {
         guard let dev = device else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self, weak dev] in
@@ -464,6 +467,7 @@ final class Agent {
             releaseHeld()
             IOAllowPowerChange(powerConnection, Int(bitPattern: argument))
         case msgSystemHasPoweredOn:
+            checkConflicts()
             if device != nil {
                 log.info("system woke: re-applying")
                 applyFailures = 0
@@ -473,6 +477,22 @@ final class Agent {
         default:
             break
         }
+    }
+
+    // MARK: Conflicting Logitech software
+
+    /// A few file-existence tests at startup, on connection and on wake;
+    /// logged when the result changes.
+    private func checkConflicts() {
+        let found = Conflicts.installed { FileManager.default.fileExists(atPath: $0) }
+        guard found != conflicts else { return }
+        conflicts = found
+        if let w = Conflicts.warning(found) {
+            log.warning("\(w, privacy: .public)")
+        } else {
+            log.notice("no conflicting Logitech software installed any more")
+        }
+        writeStatus()
     }
 
     // MARK: Signals and stop
@@ -549,6 +569,7 @@ final class Agent {
         if let d = currentDPI { lines.append("dpi=\(d)") }
         let names = diverted.sorted().compactMap { Control(cid: $0)?.rawValue }
         lines.append("diverted=\(names.isEmpty ? "none" : names.joined(separator: ","))")
+        lines.append("conflicts=\(conflicts.isEmpty ? "none" : conflicts.map(\.name).joined(separator: ","))")
         StatusFile.write(lines.joined(separator: "\n") + "\n")
     }
 }

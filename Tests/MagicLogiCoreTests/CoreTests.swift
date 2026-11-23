@@ -397,3 +397,25 @@ final class ActionTests: XCTestCase {
         XCTAssertEqual(e.released, [])
     }
 }
+
+final class ConflictsTests: XCTestCase {
+    func testNothingInstalled() {
+        XCTAssertEqual(Conflicts.installed { _ in false }, [])
+        XCTAssertNil(Conflicts.warning([]))
+    }
+
+    func testPluginServiceDetected() {
+        let found = Conflicts.installed { $0 == "/Applications/Utilities/LogiPluginService.app" }
+        XCTAssertEqual(found.map(\.name), ["Logi Plugin Service"])
+        let w = Conflicts.warning(found) ?? ""
+        XCTAssertTrue(w.contains("Logi Plugin Service"))
+        XCTAssertTrue(w.contains("/Applications/Utilities/LogiPluginService.app"))
+    }
+
+    func testOnlyFixedPathsAreChecked() {
+        var asked: [String] = []
+        _ = Conflicts.installed { asked.append($0); return true }
+        XCTAssertEqual(asked, Conflicts.known.map(\.path))
+        XCTAssertTrue(asked.allSatisfy { $0.hasPrefix("/Applications/") && $0.hasSuffix(".app") })
+    }
+}

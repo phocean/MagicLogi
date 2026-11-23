@@ -89,7 +89,7 @@ configuration est conservée.
 
 | Commande | Effet |
 |---|---|
-| `magiclogictl status` | état, batterie, DPI, boutons détournés, autorisations |
+| `magiclogictl status` | état, batterie, DPI, boutons détournés, autorisations, logiciel Logitech en concurrence |
 | `magiclogictl permissions` | relance, état et ouverture des autorisations manquantes |
 | `magiclogictl reload` | relit la configuration |
 | `magiclogictl start` / `stop` / `restart` | pilote l'agent |
@@ -107,8 +107,30 @@ make uninstall                            # garde la configuration ; --purge pou
 
 ## Si un bouton ne répond plus
 
-Un bouton remappé est « détourné » dans la souris ; si l'agent meurt
-brutalement, `launchd` le relance en moins d'une seconde et il reprend la main.
+**Logiciel Logitech encore installé.** *Logi Plugin Service*, installé par
+Logi Options+ dans `/Applications/Utilities` et laissé en place quand on
+désinstalle Options+, se connecte à la souris à chaque allumage de l'écran
+et lui prend les boutons remappés, qui deviennent muets. MagicLogi le
+signale dans `magiclogictl status` (`conflicts=…`), son journal et à
+l'installation. Il faut le désinstaller (mot de passe administrateur) :
+
+```bash
+sudo rm -rf /Applications/Utilities/LogiPluginService.app "/Library/Application Support/Logi"
+```
+
+```bash
+sudo pkgutil --forget com.logi.installer.pluginservice.package
+```
+
+```bash
+sudo pkgutil --forget com.logi.installer.pluginservice.media.package
+```
+
+Puis `magiclogictl restart`. Logi Options+ lui-même doit aussi être
+désinstallé (avec son désinstalleur).
+
+**Agent arrêté brutalement.** Un bouton remappé est « détourné » dans la
+souris ; `launchd` relance l'agent en moins d'une seconde et il reprend la main.
 En dernier recours : **éteindre puis rallumer la souris** (elle oublie alors
 tout détournement), ou `magiclogictl reset`.
 
