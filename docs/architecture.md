@@ -42,10 +42,28 @@ binaire : les autorisations TCC, liées à la signature, valent pour les deux.
 | Bouton remappé | `0x1B04` détournement **temporaire** → notification HID++ → `CGEventPost` | la souris n'émet plus l'événement natif : ni doublon, ni filtrage, ni event tap |
 | Geste | détournement + `rawXY` : le mouvement arrive en HID++ tant que le bouton est tenu, le pointeur ne bouge pas | la direction est connue sans toucher au flux du pointeur |
 | Bouton natif | rien | l'agent n'intervient pas |
+| Zoom ⌘ + défilement (facultatif) | event tap **défilement seul**, niveau session annoté → ⌘= / ⌘- par `CGEventPostToPid` | seule exception au principe, désactivée par défaut ; voir ci-dessous et [etude-zoom.md](etude-zoom.md) |
 
-**Aucun event tap, aucune saisie exclusive.** Le clavier TrackPoint, le
-trackpad et l'event tap de MagicTrackpoint ne voient aucune différence ; les
-événements synthétisés portent `kCGEventSourceUserData = 0x4D4C4F47` (« MLOG »).
+**Aucune saisie exclusive ; aucun event tap sauf le zoom.** Sans `[zoom]`, le
+clavier TrackPoint, le trackpad et l'event tap de MagicTrackpoint ne voient
+aucune différence ; les événements synthétisés portent
+`kCGEventSourceUserData = 0x4D4C4F47` (« MLOG »).
+
+**Zoom (`[zoom] enabled = true`).** Un tap actif
+(`kCGAnnotatedSessionEventTap`, masque `scrollWheel` seul), créé seulement si
+la section est activée et l'Accessibilité accordée, détruit sinon. Placé en
+aval des taps HID de MagicTrackpoint et du défilement qu'il injecte au niveau
+session : il voit molette, TrackPoint et trackpad, avec le processus
+destinataire de chaque événement. Pour chaque événement : modificateur seul
+tenu (drapeaux de l'événement), destinataire dans la liste (identifiant de
+bundle par `proc_pidpath`, en cache), défilement surtout vertical → absorbé,
+deltas cumulés (`ZoomTracker`, palier `step`, 3 au plus par événement, remise
+à zéro après 300 ms ou changement de sens, inertie absorbée sans compter), et
+⌘= / ⌘- envoyés **par position physique** (touches ANSI `=` 0x18 et `-` 0x1B)
+au processus destinataire. Tout le reste passe tel quel ; aucune boucle (le
+tap ne voit pas les touches qu'il envoie, et MagicLogi n'injecte aucun
+défilement). Le tap appartient au processus : arrêt ou plantage = défilement
+natif immédiat. Délai dépassé (`kCGEventTapDisabledByTimeout`) : réactivé.
 
 L'application est **idempotente** : chaque valeur est lue puis écrite seulement
 si elle diffère (mesuré : une réapplication sans changement n'écrit rien). Les
@@ -70,13 +88,18 @@ l'état voulu, ce qui efface aussi un détournement laissé par un plantage.
 | Permission | Nécessaire | Pourquoi | Si absente |
 |---|---|---|---|
 | Surveillance de l'entrée | toujours | la souris BLE est un seul `IOHIDDevice` d'usage principal **clavier** ; macOS refuse `IOHIDDeviceOpen` (`kIOReturnNotPermitted`, vérifié) | rien n'est modifié ; l'agent attend l'autorisation |
-| Accessibilité | si un bouton a une action synthétisée | `CGEventPost` | les boutons concernés restent **natifs** (jamais détournés sans pouvoir agir) ; si retirée en marche, retour au natif au premier appui |
+| Accessibilité | si un bouton a une action synthétisée, ou si le zoom est activé | `CGEventPost`, `CGEventPostToPid`, event tap actif | les boutons concernés restent **natifs** (jamais détournés sans pouvoir agir) ; si retirée en marche, retour au natif au premier appui ; zoom : pas de tap, défilement natif (`zoom=waiting-accessibility`) |
 | Administrateur, SIP, extension noyau/système, Bluetooth, réseau | jamais | — | — |
 
 Ce que le processus reçoit : tous les rapports d'entrée **de la souris seule**
 (mouvement, boutons, et son rapport clavier `0x01` que la MX Anywhere 2S
 n'utilise pas). Les rapports autres que `0x11` sont rejetés avant toute copie ;
 rien n'est stocké ni journalisé. Le clavier TrackPoint n'est jamais ouvert.
+Avec le zoom activé, s'y ajoutent **les événements de défilement de la
+session**, tous périphériques : seuls deltas, phase d'inertie, drapeaux de
+modificateurs, marque et processus destinataire sont lus ; rien n'est stocké
+ni journalisé (au niveau debug, non conservé par défaut : le nombre de paliers
+et le pid). Aucun événement clavier n'est jamais intercepté.
 
 Entrées non fiables et leur traitement :
 
@@ -85,12 +108,15 @@ Entrées non fiables et leur traitement :
 | Rapports HID++ (périphérique, BLE) | longueur et ID de rapport vérifiés ; réponses appariées par fonction **et** ID logiciel `0x0C` ; chaque champ lu avec bornes (`u16(at:)`), listes plafonnées (DPI 2 000 valeurs, 32 contrôles), sommes de gestes bornées ; erreurs HID++ et délais gérés sans plantage |
 | `config.toml` | sous-ensemble TOML strict ; clés, tables et valeurs inconnues refusées avec numéro de ligne ; plages validées |
 | `com.apple.symbolichotkeys` | entrée mal formée → raccourci par défaut ; code de touche borné 0–127 ; raccourci désactivé → rien n'est envoyé |
-| Arguments de `magiclogictl` | échappés en XML pour le plist ponctuel ; seules `diag`, `events`, `reset` sont lancées ainsi |
+| Arguments de `magiclogictl` | échappés en XML pour le plist ponctuel ; seules `diag`, `events`, `scroll-probe`, `reset` sont lancées ainsi |
+| Section `[zoom]` | modificateur parmi cmd/alt/shift (ctrl refusé : zoom écran de macOS), `step` 5–2000, identifiants de bundle validés (syntaxe DNS inversée, 255 caractères), liste non vide |
+| Événements de défilement (zoom) | champs entiers et flottants lus par l'API ; pid ≤ 0 ou chemin introuvable → non concerné ; cache pid → bundle plafonné à 256 entrées |
 
 Pas de socket, pas de port Mach publié, pas de commande à distance : le seul
 canal de contrôle est `launchd` (signaux) et le fichier de configuration de
 l'utilisateur. Fichier d'état : `~/.local/state/magiclogi/status`, répertoire
-`0700`, ne contient que connexion, batterie, DPI et boutons détournés.
+`0700`, ne contient que connexion, batterie, DPI, boutons détournés, état du
+zoom et logiciel Logitech en concurrence.
 
 **Signature** : runtime renforcé, identifiant `com.jcbaptiste.magiclogi`,
 `Info.plist` intégré (`__TEXT,__info_plist`). Avec un certificat Developer ID ou
@@ -176,12 +202,14 @@ réinstallation. Le comportement par défaut reste celui de MagicTrackpoint.
 
 ### Automatisés (`make test`)
 
-33 tests XCTest : trames HID++ (encodage, réponses, erreurs, rejets), décodage
+41 tests XCTest : trames HID++ (encodage, réponses, erreurs, rejets), décodage
 des charges **réellement lues sur la souris** (liste DPI, contrôles,
 rapports), batterie, molette, mouvement, reconnaissance de gestes, TOML
 (valides et 15 cas d'erreur), configuration stricte, actions, raccourcis système
 (entrées réelles de ce Mac), suivi des boutons, validité de l'exemple fourni, détection des logiciels
-Logitech en concurrence (chemins fixes seulement).
+Logitech en concurrence (chemins fixes seulement), tableaux de chaînes TOML,
+section `[zoom]` (défauts, rejets), cumul des deltas du zoom (paliers, sens,
+défilement naturel, plafond, remise à zéro, inertie, horizontal).
 Plus : `bash -n` des scripts, `plutil -lint` du LaunchAgent.
 
 ### Observés sur le matériel (2026-11-22/23, macOS 27.3, firmware MPM13.00 B0003)
@@ -209,6 +237,14 @@ Plus : `bash -n` des scripts, `plutil -lint` du LaunchAgent.
 | Relance volontaire de Logi Plugin Service | connexion à la souris, boutons muets aussitôt (utilisateur) ; `restart` les rend |
 | Logi Plugin Service désinstallé | plus aucune connexion de sa part, boutons détournés |
 | 1.0.2 : détection des logiciels en concurrence | `conflicts=none` une fois désinstallé ; tests unitaires pour le cas présent |
+| 1.1.0 : ⌘ + molette MX Anywhere dans Aperçu, PDF et PNG | zoom avant et arrière (utilisateur) |
+| 1.1.0 : ⌘ + TrackPoint (bouton central + mouvement) dans Aperçu | zoom avant et arrière, sans rafale (utilisateur) |
+| 1.1.0 : défilement sans ⌘, clic central seul du TrackPoint | inchangés (utilisateur) |
+| 1.1.0 : ⌘ + molette dans Firefox / Safari | comportement propre à l'application conservé (utilisateur) |
+| 1.1.0 : dézoom d'une image avec ⌘- par caractère | **échec** : en AZERTY, Aperçu attend ⌘) (raccourci localisé par position) ; corrigé en envoyant la position ANSI |
+| 1.1.0 : CPU au repos, zoom activé (60 s) | 0,00 s de CPU, 17 Mo RSS |
+| 1.1.0 : liste des taps du système (`CGGetEventTapList`) | agent : un tap actif au niveau session annoté (point 2), masque `scrollWheel` seul (`0x400000`) ; MagicTrackpoint : ses taps au niveau HID (point 0) |
+| 1.1.0 : `magiclogictl stop`, puis `kill -9` | tap disparu aussitôt dans les deux cas ; relance `launchd` : `zoom=on` |
 
 ### Restant à valider par l'utilisateur
 

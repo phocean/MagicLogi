@@ -4,9 +4,11 @@
 // A deliberately small TOML subset, enough for config.toml:
 //   # comments, [table] headers (bare names), key = value lines,
 //   values: "basic strings" (escapes \" \\ \n \t), integers (decimal,
-//   optional sign, "_" separators), booleans.
-// Anything else (arrays, inline tables, floats, dates, dotted keys,
-// multi-line strings) is rejected with a line number: no silent guessing.
+//   optional sign, "_" separators), booleans, and single-line arrays of
+//   strings (["a", "b"]).
+// Anything else (other arrays, inline tables, floats, dates, dotted keys,
+// multi-line strings or arrays) is rejected with a line number: no silent
+// guessing.
 
 import Foundation
 
@@ -14,12 +16,14 @@ public enum TOMLValue: Equatable, Sendable {
     case string(String)
     case integer(Int)
     case boolean(Bool)
+    case strings([String])
 
     public var typeName: String {
         switch self {
         case .string: return "string"
         case .integer: return "integer"
         case .boolean: return "boolean"
+        case .strings: return "array of strings"
         }
     }
 }
@@ -126,6 +130,7 @@ public struct TOMLDocument: Sendable {
             guard closed else { throw TOMLError(line: line, message: "unterminated string") }
             return .string(out)
         }
+        if s.hasPrefix("[") { return try parseStringArray(s, line: line) }
         if s.hasPrefix("'") { throw TOMLError(line: line, message: "use double quotes for strings") }
         var digits = s
         var sign = 1
@@ -137,5 +142,44 @@ public struct TOMLDocument: Sendable {
             throw TOMLError(line: line, message: "unsupported value \(s) (expected \"string\", integer, true or false)")
         }
         return .integer(sign * n)
+    }
+
+    /// ["a", "b"] on one line; a trailing comma is allowed.
+    static func parseStringArray(_ s: String, line: Int) throws -> TOMLValue {
+        guard s.hasSuffix("]") else {
+            throw TOMLError(line: line, message: "arrays must be on one line and end with ]")
+        }
+        let inner = s.dropFirst().dropLast()
+        var items: [String] = []
+        var current = ""
+        var inString = false
+        var escaped = false
+        var elements: [String] = []
+        for ch in inner {
+            if inString {
+                current.append(ch)
+                if escaped { escaped = false } else if ch == "\\" { escaped = true } else if ch == "\"" { inString = false }
+            } else if ch == "\"" {
+                inString = true
+                current.append(ch)
+            } else if ch == "," {
+                elements.append(current)
+                current = ""
+            } else {
+                current.append(ch)
+            }
+        }
+        guard !inString else { throw TOMLError(line: line, message: "unterminated string") }
+        elements.append(current)
+        for (i, raw) in elements.enumerated() {
+            let e = raw.trimmingCharacters(in: .whitespaces)
+            if e.isEmpty && i == elements.count - 1 && i > 0 { continue }   // trailing comma
+            if e.isEmpty && elements.count == 1 { continue }                // []
+            guard e.hasPrefix("\""), case .string(let v) = try parseValue(e, line: line) else {
+                throw TOMLError(line: line, message: "arrays may only hold \"strings\"")
+            }
+            items.append(v)
+        }
+        return .strings(items)
     }
 }

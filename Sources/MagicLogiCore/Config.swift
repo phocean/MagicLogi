@@ -42,6 +42,8 @@ public struct Config: Equatable, Sendable {
     /// What a "gestures" button does: click, or hold and move.
     public var gestures: [GestureSlot: ButtonAction] = GestureSlot.defaults
     public var gestureThreshold = 130
+    /// Modifier + scroll = zoom ([zoom]); off unless enabled.
+    public var zoom = ZoomConfig()
 
     public static let dpiRange = 200...4000
     public static let gestureThresholdRange = 20...5000
@@ -52,8 +54,10 @@ public struct Config: Equatable, Sendable {
 
     public func action(for control: Control) -> ButtonAction { buttons[control] ?? .native }
 
-    /// True if at least one button needs the Accessibility permission.
-    public var needsEventPosting: Bool { Control.allCases.contains { action(for: $0).needsEventPosting } }
+    /// True if a button or the zoom needs the Accessibility permission.
+    public var needsEventPosting: Bool {
+        zoom.enabled || Control.allCases.contains { action(for: $0).needsEventPosting }
+    }
 
     public static var defaultPath: String {
         (NSHomeDirectory() as NSString).appendingPathComponent(".config/magiclogi/config.toml")
@@ -70,6 +74,7 @@ public struct Config: Equatable, Sendable {
             "scroll": ["invert"],
             "buttons": Set(Control.allCases.map(\.rawValue)),
             "gestures": Set(GestureSlot.allCases.map(\.rawValue) + ["threshold"]),
+            "zoom": ["enabled", "modifier", "step", "invert", "apps"],
         ]
         for (table, keys) in doc.tables {
             guard let allowed = known[table] else {
@@ -121,7 +126,55 @@ public struct Config: Equatable, Sendable {
             }
             cfg.gestures[slot] = action
         }
+        cfg.zoom = try parseZoom(doc.tables["zoom"] ?? [:])
         return cfg
+    }
+
+    private static func parseZoom(_ t: [String: (value: TOMLValue, line: Int)]) throws -> ZoomConfig {
+        var z = ZoomConfig()
+        if let e = t["enabled"] {
+            guard case .boolean(let v) = e.value else {
+                throw TOMLError(line: e.line, message: "enabled must be true or false, got \(e.value.typeName)")
+            }
+            z.enabled = v
+        }
+        if let e = t["modifier"] {
+            guard case .string(let s) = e.value else {
+                throw TOMLError(line: e.line, message: "modifier must be a string, got \(e.value.typeName)")
+            }
+            switch s.lowercased() {
+            case "cmd", "command": z.modifier = .command
+            case "opt", "option", "alt": z.modifier = .option
+            case "shift": z.modifier = .shift
+            case "ctrl", "control":
+                throw TOMLError(line: e.line, message: "modifier \"\(s)\" is refused: control + scroll is macOS's own screen zoom (Accessibility); use cmd, alt or shift")
+            default:
+                throw TOMLError(line: e.line, message: "unknown modifier \"\(s)\" (use cmd, alt or shift)")
+            }
+        }
+        if let e = t["step"] {
+            guard case .integer(let v) = e.value, ZoomConfig.stepRange.contains(v) else {
+                throw TOMLError(line: e.line, message: "step must be an integer in \(ZoomConfig.stepRange.lowerBound)…\(ZoomConfig.stepRange.upperBound)")
+            }
+            z.step = v
+        }
+        if let e = t["invert"] {
+            guard case .boolean(let v) = e.value else {
+                throw TOMLError(line: e.line, message: "invert must be true or false, got \(e.value.typeName)")
+            }
+            z.invert = v
+        }
+        if let e = t["apps"] {
+            guard case .strings(let list) = e.value else {
+                throw TOMLError(line: e.line, message: "apps must be a list of bundle identifiers, e.g. [\"com.apple.Preview\"]")
+            }
+            guard !list.isEmpty else { throw TOMLError(line: e.line, message: "apps is empty (set enabled = false instead)") }
+            for id in list where !ZoomConfig.isValidBundleID(id) {
+                throw TOMLError(line: e.line, message: "\"\(id)\" is not a bundle identifier (e.g. com.apple.Preview)")
+            }
+            z.apps = list
+        }
+        return z
     }
 
     /// One-line human summary for the log.
@@ -133,6 +186,10 @@ public struct Config: Equatable, Sendable {
         parts.append("remapped=" + (remapped.isEmpty ? "none" : remapped.map(\.rawValue).joined(separator: ",")))
         if Control.allCases.contains(where: { action(for: $0) == .gestures }) {
             parts.append("gesture_threshold=\(gestureThreshold)")
+        }
+        if zoom.enabled {
+            let mod = zoom.modifier == .command ? "cmd" : zoom.modifier == .option ? "alt" : "shift"
+            parts.append("zoom=\(mod)+scroll step=\(zoom.step)\(zoom.invert ? " inverted" : "") apps=\(zoom.apps.joined(separator: ","))")
         }
         return parts.joined(separator: " ")
     }

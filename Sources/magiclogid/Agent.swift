@@ -29,6 +29,11 @@ final class Agent {
     private var config = Config()
     private let manager: IOHIDManager
     private let injector = Injector()
+    private lazy var zoom: ScrollZoom = {
+        let z = ScrollZoom(injector: injector)
+        z.onLost = { [weak self] in self?.writeStatus(); self?.startPermissionTimer() }
+        return z
+    }()
 
     private var device: LogiDevice?
     /// Matched but not opened yet (missing Input Monitoring permission).
@@ -71,6 +76,7 @@ final class Agent {
         let shownPath = configPath.hasPrefix(NSHomeDirectory()) ? "~" + configPath.dropFirst(NSHomeDirectory().count) : configPath
         log.notice("magiclogid \(magiclogiVersion, privacy: .public) starting, config \(shownPath, privacy: .public)")
         loadConfig(initial: true)
+        updateZoom()
         log.notice("permissions: input monitoring \(IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted ? "yes" : "no", privacy: .public), accessibility \(AXIsProcessTrusted() ? "yes" : "no", privacy: .public), post events \(CGPreflightPostEventAccess() ? "yes" : "no", privacy: .public)")
         checkConflicts()
         installSignalHandlers()
@@ -428,6 +434,13 @@ final class Agent {
             }
             stillWaiting = waitingDevice != nil
         }
+        if config.zoom.enabled && !zoom.isActive {
+            if Injector.allowed {
+                log.notice("Accessibility granted")
+                updateZoom()
+            }
+            if !zoom.isActive { stillWaiting = true }
+        }
         if device != nil && config.needsEventPosting {
             if Injector.allowed {
                 if Control.allCases.contains(where: { config.action(for: $0).needsEventPosting && !diverted.contains($0.cid) }) {
@@ -479,6 +492,20 @@ final class Agent {
         }
     }
 
+    // MARK: Zoom (modifier + scroll)
+
+    /// Starts, updates or stops the scroll tap to match the configuration.
+    /// Independent of the mouse: works with any pointing device.
+    private func updateZoom() {
+        defer { writeStatus() }
+        guard config.zoom.enabled else { zoom.stop(); return }
+        if Injector.allowed && zoom.start(config.zoom) { return }
+        zoom.stop()
+        log.error("zoom: Accessibility not granted; scrolling stays native until it is (System Settings > Privacy & Security > Accessibility > magiclogid)")
+        if !askedAccessibility { askedAccessibility = true; _ = CGRequestPostEventAccess() }
+        startPermissionTimer()
+    }
+
     // MARK: Conflicting Logitech software
 
     /// A few file-existence tests at startup, on connection and on wake;
@@ -506,6 +533,7 @@ final class Agent {
                 if sig == SIGHUP {
                     log.notice("SIGHUP: reloading configuration")
                     self.loadConfig(initial: false)
+                    self.updateZoom()
                     self.applyFailures = 0
                     self.scheduleApply(after: 0)
                 } else {
@@ -529,6 +557,7 @@ final class Agent {
     /// Gives the mouse back its native behaviour: diversions do NOT end when
     /// the process exits (verified), so they must be undone here.
     private func finishStop() -> Never {
+        zoom.stop()
         releaseHeld()
         if let dev = device, !dev.gone {
             // Every managed control, not only those we believe diverted: the
@@ -569,6 +598,7 @@ final class Agent {
         if let d = currentDPI { lines.append("dpi=\(d)") }
         let names = diverted.sorted().compactMap { Control(cid: $0)?.rawValue }
         lines.append("diverted=\(names.isEmpty ? "none" : names.joined(separator: ","))")
+        lines.append("zoom=\(!config.zoom.enabled ? "off" : zoom.isActive ? "on" : "waiting-accessibility")")
         lines.append("conflicts=\(conflicts.isEmpty ? "none" : conflicts.map(\.name).joined(separator: ","))")
         StatusFile.write(lines.joined(separator: "\n") + "\n")
     }

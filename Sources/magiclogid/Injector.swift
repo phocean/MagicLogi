@@ -120,6 +120,24 @@ final class Injector {
         }
     }
 
+    /// One press of `combo` delivered to a single process (CGEventPostToPid),
+    /// with its modifiers as flags only: no modifier key events, so the
+    /// modifier the user is physically holding is left alone. Used by the
+    /// zoom, whose target is the application under the pointer, not
+    /// necessarily the active one.
+    func pressKeys(_ combo: KeyCombo, toPid pid: pid_t) {
+        let code = resolvedKeyCode(combo)
+        var flags: CGEventFlags = Injector.modifierKeys
+            .filter { combo.modifiers.contains($0.0) }.reduce([]) { $0.union($1.2) }
+        if combo.isFunctionKey { flags.insert(.maskSecondaryFn) }
+        for down in [true, false] {
+            guard let e = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: down) else { return }
+            e.flags = flags
+            e.setIntegerValueField(.eventSourceUserData, value: Injector.marker)
+            e.postToPid(pid)
+        }
+    }
+
     private func key(_ code: CGKeyCode, down: Bool, flags: CGEventFlags) {
         guard let e = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: down) else { return }
         e.flags = flags

@@ -17,9 +17,12 @@ Sans lien avec Logitech.
 | Défilement horizontal | natif (inclinaison de la molette) | oui |
 | Reconnexion, extinction/rallumage de la souris | réglages réappliqués automatiquement (~1 s) | oui |
 | Batterie | lue, journalisée, `magiclogictl status` | oui |
+| ⌘ + défilement = zoom dans Aperçu, **toute** souris ou le TrackPoint | section `[zoom]` facultative : événements de défilement seulement | oui |
 
 Modèle unique : `046D:B01A`, Bluetooth direct. Aucun autre périphérique n'est
-ouvert ni modifié (le clavier TrackPoint et le trackpad sont ignorés).
+ouvert ni modifié (le clavier TrackPoint et le trackpad sont ignorés). Le zoom
+facultatif fait exception : il agit sur les événements de défilement, donc
+avec n'importe quel périphérique de pointage.
 
 ## Installation
 
@@ -80,6 +83,24 @@ left = "space-left"
 right = "space-right"
 ```
 
+**Zoom par ⌘ + défilement** (désactivé tant que cette section est absente).
+Aperçu ne zoome pas avec ⌘ + défilement ; MagicLogi l'ajoute, pour la molette
+de toute souris, le TrackPoint (MagicTrackpoint) et le trackpad :
+
+```toml
+[zoom]
+enabled = true
+# modifier = "cmd"               # cmd, alt ou shift (ctrl = zoom écran de macOS)
+# step = 120                     # défilement par palier ; plus bas = plus rapide
+# invert = false
+# apps = ["com.apple.Preview"]   # identifiants de bundle
+```
+
+Seules les applications de la liste sont concernées ; ailleurs ⌘ + défilement
+garde son comportement, et le défilement sans modificateur n'est jamais
+touché. Demande l'Accessibilité. Activé, il fait passer chaque événement de
+défilement par l'agent (voir [architecture.md](architecture.md) §4).
+
 Clé absente = la souris n'est pas touchée sur ce point. Une configuration
 invalide est refusée en entier (`magiclogictl check` indique la ligne fautive) :
 au démarrage la souris reste telle quelle, au rechargement l'ancienne
@@ -96,6 +117,7 @@ configuration est conservée.
 | `magiclogictl log [minutes]` | journal (Unified Logging, sous-système `com.jcbaptiste.magiclogi`) |
 | `magiclogictl diag` | rapport HID++ en lecture seule (fonctions, DPI, boutons, batterie) |
 | `magiclogictl events [s] [--divert]` | affiche ce qu'envoient boutons et molette |
+| `magiclogictl scroll-probe [s]` | affiche chaque événement de défilement, tous périphériques (diagnostic en lecture seule) |
 | `magiclogictl reset` | boutons natifs, molette non inversée, DPI d'usine (agent arrêté) |
 
 ## Désinstallation
@@ -138,6 +160,7 @@ tout détournement), ou `magiclogictl reset`.
 
 - [etude-faisabilite.md](etude-faisabilite.md) — étude technique, matrice de faisabilité, preuves
 - [architecture.md](architecture.md) — architecture, permissions, surface d'attaque, limites, tests et mesures
+- [etude-zoom.md](etude-zoom.md) — zoom par ⌘ + défilement : étude, mesures, cohabitation avec MagicTrackpoint
 
 Licence : GNU GPL v3 ou ultérieure. Aucun code tiers ; seules des
 connaissances de protocole HID++ (Solaar, OpenLogi, logiops) sont réutilisées.

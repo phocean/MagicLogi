@@ -73,3 +73,21 @@ right = "space-right"
 # Déplacement à atteindre, en points du capteur (130 ≈ 2,7 mm à 1200 DPI) :
 # 20 à 5000. Plus haut = moins sensible.
 threshold = 130
+
+# [zoom]
+# Modificateur + défilement = zoom, pour les applications qui ne le font pas
+# (Aperçu). Désactivé tant que cette section est absente ou enabled = false :
+# aucun événement n'est alors intercepté. Activé, l'agent reçoit chaque
+# événement de DÉFILEMENT (jamais le clavier, les clics ou les mouvements),
+# de tout périphérique : molette de n'importe quelle souris, TrackPoint,
+# trackpad. Il n'absorbe que ceux faits avec le modificateur au-dessus d'une
+# application de la liste, et lui envoie à la place Agrandir / Réduire.
+# Demande l'autorisation Accessibilité.
+# enabled = true
+# modifier = "cmd"               # cmd, alt ou shift (ctrl est refusé : c'est
+#                                # le zoom de l'écran entier de macOS)
+# step = 120                     # défilement à cumuler par palier (5 à 2000) ;
+#                                # plus bas = zoom plus rapide
+# invert = false                 # true : vers le haut = réduire
+# apps = ["com.apple.Preview"]   # identifiants de bundle (défaut : Aperçu)
+#                                # ex. : osascript -e 'id of app "Aperçu"'

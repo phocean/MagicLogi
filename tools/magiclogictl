@@ -14,10 +14,13 @@
 #   magiclogictl diag               read-only HID++ report on the mouse
 #   magiclogictl events [SECONDS] [--motion] [--divert]
 #                                   print what the buttons and wheel send
+#   magiclogictl scroll-probe [SECONDS] [--try-zoom[=equal|plus]]
+#                                   print every scroll event, all devices
+#                                   (listen-only; ⌘ + scroll zoom study)
 #   magiclogictl reset              native buttons, no inversion, default DPI
 #                                   (stop the agent first, or it re-applies)
 #
-# diag, events and reset run magiclogid as a one-shot launchd job: run
+# diag, events, scroll-probe and reset run magiclogid as a one-shot launchd job: run
 # directly from a terminal, macOS would check the TERMINAL's Input
 # Monitoring permission instead of magiclogid's own.
 #
@@ -159,6 +162,8 @@ case $cmd in
             fi
         done
         oneshot events "$@" ;;
+    scroll-probe)
+        oneshot scroll-probe "$@" ;;
     reset)
         if loaded; then die "stop the agent first (magiclogictl stop): it would re-apply the configuration"; fi
         oneshot reset ;;

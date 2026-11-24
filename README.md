@@ -21,9 +21,12 @@ telemetry, no automatic updates, no administrator rights.
 | Horizontal scrolling | native (wheel tilt) | yes |
 | Reconnection, mouse switched off and on | settings re-applied automatically (~1 s) | yes |
 | Battery | read and logged, `magiclogictl status` | yes |
+| ⌘ + scroll = zoom in Aperçu (Preview), **any** mouse or the TrackPoint | optional `[zoom]`: scroll events only, see below | yes |
 
 One model only: `046D:B01A` over direct Bluetooth (no Unifying receiver). No
 other device is ever opened or changed: keyboards and trackpads are ignored.
+The optional zoom is the exception that works with any pointing device (it
+acts on scroll events, not on a device).
 
 ## Install
 
@@ -89,6 +92,24 @@ down = "app-expose"
 threshold = 130
 ```
 
+**Zoom with ⌘ + scroll** (off unless you add this section). Aperçu has no
+⌘ + scroll zoom; this adds it, for the wheel of any mouse, the TrackPoint
+(MagicTrackpoint) and the trackpad:
+
+```toml
+[zoom]
+enabled = true
+# modifier = "cmd"               # cmd, alt or shift (ctrl is macOS's screen zoom)
+# step = 120                     # scroll distance per zoom step; lower = faster
+# invert = false
+# apps = ["com.apple.Preview"]   # bundle identifiers
+```
+
+Only the listed applications are affected; ⌘ + scroll keeps its own behaviour
+everywhere else, and scrolling without the modifier is never touched. It needs
+Accessibility. While it is enabled, every scroll event passes through the
+agent (see *How it works*).
+
 A missing key leaves that setting of the mouse alone. An invalid file is
 rejected as a whole (`magiclogictl check` shows the faulty line): at startup
 the mouse is left unchanged, on reload the previous configuration is kept.
@@ -106,6 +127,7 @@ Named actions such as `mission-control` send **your** current macOS shortcut;
 | `magiclogictl log [minutes]` | log (Unified Logging, subsystem `com.jcbaptiste.magiclogi`) |
 | `magiclogictl diag` | read-only HID++ report (features, DPI, controls, battery) |
 | `magiclogictl events [s] [--divert]` | show what the buttons and wheel send |
+| `magiclogictl scroll-probe [s]` | show every scroll event, all devices (read-only diagnostic) |
 | `magiclogictl reset` | native buttons, no inversion, factory DPI (agent stopped) |
 
 ## If the buttons stop responding
@@ -145,10 +167,16 @@ direction stay in the mouse until it is switched off and on, or
 
 ## How it works, in short
 
-- It **configures the mouse instead of intercepting events**: no event tap,
-  no exclusive access. A button is taken over (HID++ "diversion") only if you
-  remap it; the mouse then stops sending its native event, so there are no
-  duplicates and nothing else is filtered.
+- It **configures the mouse instead of intercepting events**: no exclusive
+  access. A button is taken over (HID++ "diversion") only if you remap it; the
+  mouse then stops sending its native event, so there are no duplicates and
+  nothing else is filtered.
+- **No event tap unless `[zoom]` is enabled.** The zoom then uses one tap that
+  receives **scroll events only** (never keyboard, clicks or motion). It reads
+  each event's deltas, modifier flags and target application; an event is
+  absorbed only when the modifier is held over a listed application. Nothing
+  is stored or logged. If the agent stops or crashes, the tap disappears with
+  it and scrolling is native at once.
 - One process, one thread, event-driven: **0.0 % CPU and 1 wake-up per minute
   at rest**, about 5 MB of memory.
 - A diversion survives a crash of the agent (verified): `launchd` restarts it
@@ -158,7 +186,7 @@ direction stay in the mouse until it is switched off and on, or
 ## Privacy and security
 
 No network access, no data collection, never runs as root, public Apple APIs
-only. Mouse reports other than HID++ are dropped on their first byte, never
+only, keystrokes never observed. Mouse reports other than HID++ are dropped on their first byte, never
 copied, stored or logged; keyboards are never opened. See
 [SECURITY.md](SECURITY.md) and the permission and attack-surface analysis in
 [docs/architecture.md](docs/architecture.md#4-permissions-et-surface-dattaque).

@@ -202,6 +202,17 @@ final class TOMLTests: XCTestCase {
         XCTAssertEqual(doc.tables["pointer"]?["dpi"]?.line, 4)
     }
 
+    func testStringArrays() throws {
+        let doc = try TOMLDocument.parse("""
+        a = ["com.apple.Preview", "x,y" ]  # comment
+        b = []
+        c = ["one",]
+        """)
+        XCTAssertEqual(doc.tables[""]?["a"]?.value, .strings(["com.apple.Preview", "x,y"]))
+        XCTAssertEqual(doc.tables[""]?["b"]?.value, .strings([]))
+        XCTAssertEqual(doc.tables[""]?["c"]?.value, .strings(["one"]))
+    }
+
     func testEscapes() throws {
         let doc = try TOMLDocument.parse(#"k = "a\"b\\c""#)
         XCTAssertEqual(doc.tables[""]?["k"]?.value, .string("a\"b\\c"))
@@ -214,6 +225,10 @@ final class TOMLTests: XCTestCase {
             ("k = \"open", 1),
             ("k = 1.5", 1),
             ("k = [1, 2]", 1),
+            ("k = [\"a\", 2]", 1),
+            ("k = [\"a\"", 1),
+            ("k = [\"a\", \"b]", 1),
+            ("k = [,]", 1),
             ("k = 'x'", 1),
             ("k =", 1),
             ("just text", 1),
@@ -417,5 +432,106 @@ final class ConflictsTests: XCTestCase {
         _ = Conflicts.installed { asked.append($0); return true }
         XCTAssertEqual(asked, Conflicts.known.map(\.path))
         XCTAssertTrue(asked.allSatisfy { $0.hasPrefix("/Applications/") && $0.hasSuffix(".app") })
+    }
+}
+
+final class ZoomTests: XCTestCase {
+    private func enabled(_ edit: (inout ZoomConfig) -> Void = { _ in }) -> ZoomConfig {
+        var z = ZoomConfig(); z.enabled = true; edit(&z); return z
+    }
+
+    func testConfigDefaultsAndParse() throws {
+        XCTAssertFalse(try Config.parse("").zoom.enabled)
+        XCTAssertFalse(try Config.parse("").needsEventPosting)
+        let cfg = try Config.parse("[zoom]\nenabled = true")
+        XCTAssertTrue(cfg.zoom.enabled)
+        XCTAssertEqual(cfg.zoom.modifier, .command)
+        XCTAssertEqual(cfg.zoom.apps, ["com.apple.Preview"])
+        XCTAssertEqual(cfg.zoom.step, 120)
+        XCTAssertTrue(cfg.needsEventPosting)
+        XCTAssertTrue(cfg.summary.hasSuffix("zoom=cmd+scroll step=120 apps=com.apple.Preview"))
+        let full = try Config.parse("""
+        [zoom]
+        enabled = true
+        modifier = "alt"
+        step = 40
+        invert = true
+        apps = ["com.apple.Preview", "com.example.Viewer-2"]
+        """).zoom
+        XCTAssertEqual(full.modifier, .option)
+        XCTAssertEqual(full.step, 40)
+        XCTAssertTrue(full.invert)
+        XCTAssertEqual(full.apps, ["com.apple.Preview", "com.example.Viewer-2"])
+    }
+
+    func testConfigErrors() {
+        for bad in ["[zoom]\nenabled = 1", "[zoom]\nmodifier = \"ctrl\"", "[zoom]\nmodifier = \"hyper\"",
+                    "[zoom]\nstep = 0", "[zoom]\nstep = 5000", "[zoom]\napps = []", "[zoom]\napps = \"com.apple.Preview\"",
+                    "[zoom]\napps = [\"Preview\"]", "[zoom]\napps = [\"com..apple\"]", "[zoom]\nspeed = 3"] {
+            XCTAssertThrowsError(try Config.parse(bad), bad)
+        }
+    }
+
+    func testPassesWhenNotConcerned() {
+        var t = ZoomTracker()
+        let z = enabled()
+        var asked = false
+        XCTAssertEqual(t.handle(held: [], isTarget: { asked = true; return true }, dy: 10, dx: 0, momentum: false, at: 0, config: z, natural: true), .pass)
+        XCTAssertFalse(asked, "no lookup without the modifier")
+        XCTAssertEqual(t.handle(held: [.command, .shift], isTarget: { true }, dy: 10, dx: 0, momentum: false, at: 0, config: z, natural: true), .pass)
+        XCTAssertEqual(t.handle(held: .command, isTarget: { false }, dy: 10, dx: 0, momentum: false, at: 0, config: z, natural: true), .pass)
+        XCTAssertEqual(t.handle(held: .command, isTarget: { true }, dy: 10, dx: 0, momentum: false, at: 0, config: ZoomConfig(), natural: true), .pass)
+        // horizontal scrolling stays native
+        XCTAssertEqual(t.handle(held: .command, isTarget: { true }, dy: 2, dx: -30, momentum: false, at: 0, config: z, natural: true), .pass)
+    }
+
+    func testAccumulatesTrackPointSteps() {
+        var t = ZoomTracker()
+        let z = enabled { $0.step = 100 }
+        var steps = 0
+        for i in 0..<25 {   // TrackPoint: 10 points per event, ~30 per second
+            if case .absorb(let s) = t.handle(held: .command, isTarget: { true }, dy: 10, dx: 0, momentum: false,
+                                              at: Double(i) * 0.033, config: z, natural: true) { steps += s }
+            else { XCTFail("should absorb") }
+        }
+        XCTAssertEqual(steps, 2)
+    }
+
+    func testDirectionInvertAndNatural() {
+        let z = enabled { $0.step = 50 }
+        var t = ZoomTracker()
+        XCTAssertEqual(t.handle(held: .command, isTarget: { true }, dy: 60, dx: 0, momentum: false, at: 0, config: z, natural: true), .absorb(steps: 1))
+        t.reset()
+        XCTAssertEqual(t.handle(held: .command, isTarget: { true }, dy: -60, dx: 0, momentum: false, at: 0, config: z, natural: true), .absorb(steps: -1))
+        t.reset()
+        XCTAssertEqual(t.handle(held: .command, isTarget: { true }, dy: 60, dx: 0, momentum: false, at: 0, config: z, natural: false), .absorb(steps: -1))
+        t.reset()
+        let inv = enabled { $0.step = 50; $0.invert = true }
+        XCTAssertEqual(t.handle(held: .command, isTarget: { true }, dy: 60, dx: 0, momentum: false, at: 0, config: inv, natural: true), .absorb(steps: -1))
+    }
+
+    func testCapResetAndMomentum() {
+        let z = enabled { $0.step = 50 }
+        var t = ZoomTracker()
+        // a flick: capped at 3 steps, backlog not carried into a burst
+        XCTAssertEqual(t.handle(held: .command, isTarget: { true }, dy: 1000, dx: 0, momentum: false, at: 0, config: z, natural: true), .absorb(steps: 3))
+        XCTAssertEqual(t.handle(held: .command, isTarget: { true }, dy: 1, dx: 0, momentum: false, at: 0.01, config: z, natural: true), .absorb(steps: 1))
+        // direction change drops what was accumulated
+        XCTAssertEqual(t.handle(held: .command, isTarget: { true }, dy: 40, dx: 0, momentum: false, at: 0.02, config: z, natural: true), .absorb(steps: 0))
+        XCTAssertEqual(t.handle(held: .command, isTarget: { true }, dy: -40, dx: 0, momentum: false, at: 0.03, config: z, natural: true), .absorb(steps: 0))
+        XCTAssertEqual(t.handle(held: .command, isTarget: { true }, dy: -20, dx: 0, momentum: false, at: 0.04, config: z, natural: true), .absorb(steps: -1))
+        // a pause drops it too
+        XCTAssertEqual(t.handle(held: .command, isTarget: { true }, dy: 40, dx: 0, momentum: false, at: 1, config: z, natural: true), .absorb(steps: 0))
+        XCTAssertEqual(t.handle(held: .command, isTarget: { true }, dy: 40, dx: 0, momentum: false, at: 2, config: z, natural: true), .absorb(steps: 0))
+        // momentum: swallowed, never counted
+        XCTAssertEqual(t.handle(held: .command, isTarget: { true }, dy: 500, dx: 0, momentum: true, at: 2.01, config: z, natural: true), .absorb(steps: 0))
+    }
+
+    func testBundleIDSyntax() {
+        XCTAssertTrue(ZoomConfig.isValidBundleID("com.apple.Preview"))
+        XCTAssertTrue(ZoomConfig.isValidBundleID("org.mozilla.firefox"))
+        for bad in ["Preview", "com..x", ".com.x", "com.x.", "com.x y", "com.x/y", ""] {
+            XCTAssertFalse(ZoomConfig.isValidBundleID(bad), bad)
+        }
     }
 }

@@ -18,10 +18,12 @@ func printUsage() {
            magiclogid diag                   read-only HID++ report on the Logitech devices
            magiclogid events [SECONDS] [--motion] [--divert]
                                              print button and wheel reports (default 30 s)
+           magiclogid scroll-probe [SECONDS] [--try-zoom[=equal|plus]]
+                                             print every scroll event (listen-only; zoom study)
            magiclogid reset                  native buttons, no inversion, default DPI
            magiclogid --version
 
-    diag, events and reset open the mouse: run them through `magiclogictl`
+    diag, events, scroll-probe and reset open the mouse or watch events: run them through `magiclogictl`
     (as a one-shot launchd job) so that macOS checks magiclogid's own
     permissions, not the terminal's.
     """)
@@ -79,6 +81,7 @@ case "conflicts": exit(runConflicts())
 case "diag": exit(runDiag(args: rest))
 case "events": exit(runEvents(args: rest))
 case "reset": exit(runReset())
+case "scroll-probe": exit(runScrollProbe(args: rest))
 case "--version", "version": print(magiclogiVersion); exit(0)
 case "-h", "--help", "help": printUsage(); exit(0)
 default: printUsage(); exit(64)
