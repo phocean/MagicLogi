@@ -18,11 +18,12 @@ Sans lien avec Logitech.
 | Reconnexion, extinction/rallumage de la souris | réglages réappliqués automatiquement (~1 s) | oui |
 | Batterie | lue, journalisée, `magiclogictl status` | oui |
 | ⌘ + défilement = zoom dans Aperçu, **toute** souris ou le TrackPoint | section `[zoom]` facultative : événements de défilement seulement | oui |
+| ⌥ + glisser = déplacer l'image dans Aperçu (outil « main »), **toute** souris | section `[pan]` facultative : événements du bouton gauche seulement | oui |
 
 Modèle unique : `046D:B01A`, Bluetooth direct. Aucun autre périphérique n'est
 ouvert ni modifié (le clavier TrackPoint et le trackpad sont ignorés). Le zoom
-facultatif fait exception : il agit sur les événements de défilement, donc
-avec n'importe quel périphérique de pointage.
+et le déplacement facultatifs font exception : ils agissent sur les
+événements, donc avec n'importe quel périphérique de pointage.
 
 ## Installation
 
@@ -101,6 +102,27 @@ garde son comportement, et le défilement sans modificateur n'est jamais
 touché. Demande l'Accessibilité. Activé, il fait passer chaque événement de
 défilement par l'agent (voir [architecture.md](architecture.md) §4).
 
+**Déplacer le document par ⌥ + glisser** (désactivé tant que cette section
+est absente). Dans Aperçu, une image n'offre que des outils de sélection, pas
+de main : à la souris, impossible de la faire glisser. Tenez ⌥, appuyez sur
+le bouton gauche et glissez : l'image suit le pointeur, comme à deux doigts
+sur le trackpad.
+
+```toml
+[pan]
+enabled = true
+# modifier = "alt"               # alt, cmd ou shift (ctrl + clic = clic droit)
+# apps = ["com.apple.Preview"]   # identifiants de bundle
+```
+
+Chaque modificateur a déjà un sens avec un glissé quelque part (⌥ copie dans
+le Finder et sélectionne en colonne dans les éditeurs, ⇧ étend une
+sélection) : le geste est donc limité aux applications de la liste. Là, un
+appui fait avec le modificateur n'est jamais vu par l'application (⌥-clic ne
+fait plus rien dans Aperçu) ; les autres clics ne sont pas touchés. Demande
+l'Accessibilité. Activé, il fait passer chaque appui, glissé et relâché du
+bouton gauche par l'agent.
+
 Clé absente = la souris n'est pas touchée sur ce point. Une configuration
 invalide est refusée en entier (`magiclogictl check` indique la ligne fautive) :
 au démarrage la souris reste telle quelle, au rechargement l'ancienne
@@ -160,7 +182,7 @@ tout détournement), ou `magiclogictl reset`.
 
 - [etude-faisabilite.md](etude-faisabilite.md) — étude technique, matrice de faisabilité, preuves
 - [architecture.md](architecture.md) — architecture, permissions, surface d'attaque, limites, tests et mesures
-- [etude-zoom.md](etude-zoom.md) — zoom par ⌘ + défilement : étude, mesures, cohabitation avec MagicTrackpoint
+- [etude-zoom.md](etude-zoom.md) — zoom par ⌘ + défilement et déplacement par ⌥ + glisser : étude, mesures, cohabitation avec MagicTrackpoint
 
 Licence : GNU GPL v3 ou ultérieure. Aucun code tiers ; seules des
 connaissances de protocole HID++ (Solaar, OpenLogi, logiops) sont réutilisées.

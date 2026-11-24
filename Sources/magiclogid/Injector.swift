@@ -138,6 +138,24 @@ final class Injector {
         }
     }
 
+    /// A pixel (continuous) scroll at the pointer, posted to the session so
+    /// that macOS routes it to the window there, like a real one. Measured
+    /// 2026-11-24: the same event sent with CGEventPostToPid never moved
+    /// Aperçu's image, and one placed at a fixed point made the drag shake
+    /// back and forth (the location is left to macOS, as MagicTrackpoint does). No modifier flags: the key the user holds to drag
+    /// must not turn it into a zoom or a horizontal scroll. Used by the pan
+    /// ([pan]); the marker keeps the zoom tap off it.
+    func scroll(vertical: Double, horizontal: Double) {
+        let v = Int32(max(-10_000, min(10_000, vertical.rounded())))
+        let h = Int32(max(-10_000, min(10_000, horizontal.rounded())))
+        guard v != 0 || h != 0,
+              let e = CGEvent(scrollWheelEvent2Source: source, units: .pixel, wheelCount: 2,
+                              wheel1: v, wheel2: h, wheel3: 0) else { return }
+        e.flags = []
+        e.setIntegerValueField(.eventSourceUserData, value: Injector.marker)
+        e.post(tap: .cgSessionEventTap)
+    }
+
     private func key(_ code: CGKeyCode, down: Bool, flags: CGEventFlags) {
         guard let e = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: down) else { return }
         e.flags = flags

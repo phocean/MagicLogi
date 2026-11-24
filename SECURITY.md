@@ -33,7 +33,7 @@ give a reasonable time to fix the issue before disclosing it publicly.
 ## Scope
 
 In scope: the agent (`magiclogid`) and the control command (`magiclogictl`);
-the zoom's scroll event tap; the install and uninstall scripts and the disk image's installer apps; the
+the zoom's scroll event tap and the pan's left-button event tap; the install and uninstall scripts and the disk image's installer apps; the
 release chain (signing, notarization, the installer's signature check).
 
 Out of scope: macOS itself, the mouse firmware, third-party tools, and attacks
@@ -47,10 +47,11 @@ that require administrator rights or full control of the user's account.
   a keyboard), and its reports other than HID++ are discarded on their first
   byte, never copied, stored or logged.
 - **No exclusive access, no event tap by default.** Only the optional zoom
-  (`[zoom] enabled = true`) creates one, for **scroll events only**: it never
-  sees keyboard events, clicks or pointer motion, and stores or logs nothing
-  about the events it sees. Without it, events of other devices never pass
-  through the agent.
+  (`[zoom] enabled = true`) and pan (`[pan] enabled = true`) create one each:
+  the zoom's receives **scroll events only**, the pan's **left-button press,
+  drag and release only**. Neither ever sees keyboard events or plain pointer
+  motion, and nothing about the events seen is stored or logged. Without
+  them, events of other devices never pass through the agent.
 - **Fails safe**: an invalid configuration leaves the mouse unchanged; without
   Accessibility, remapped buttons stay native instead of going silent; on stop
   the buttons are given back to the mouse.

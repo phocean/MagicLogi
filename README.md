@@ -22,11 +22,12 @@ telemetry, no automatic updates, no administrator rights.
 | Reconnection, mouse switched off and on | settings re-applied automatically (~1 s) | yes |
 | Battery | read and logged, `magiclogictl status` | yes |
 | ⌘ + scroll = zoom in Aperçu (Preview), **any** mouse or the TrackPoint | optional `[zoom]`: scroll events only, see below | yes |
+| ⌥ + drag = move the image in Aperçu (a "hand" tool), **any** mouse | optional `[pan]`: left-button events only, see below | yes |
 
 One model only: `046D:B01A` over direct Bluetooth (no Unifying receiver). No
 other device is ever opened or changed: keyboards and trackpads are ignored.
-The optional zoom is the exception that works with any pointing device (it
-acts on scroll events, not on a device).
+The optional zoom and pan are the exception that works with any pointing
+device (they act on events, not on a device).
 
 ## Install
 
@@ -110,6 +111,25 @@ everywhere else, and scrolling without the modifier is never touched. It needs
 Accessibility. While it is enabled, every scroll event passes through the
 agent (see *How it works*).
 
+**Move the document with ⌥ + drag** (off unless you add this section).
+Aperçu's image view has only selection tools, no hand: with a mouse there
+is no way to drag the image around. Hold ⌥, press the left button and drag:
+the image follows the pointer, as with two fingers on a trackpad.
+
+```toml
+[pan]
+enabled = true
+# modifier = "alt"               # alt, cmd or shift (ctrl + click is a right click)
+# apps = ["com.apple.Preview"]   # bundle identifiers
+```
+
+Every modifier already means something with a drag somewhere (⌥ copies in
+the Finder and selects a column in text editors, ⇧ extends a selection), so
+it is limited to the listed applications. There, a press made with the
+modifier is never seen by the application (an ⌥-click in Aperçu does
+nothing); every other click is untouched. It needs Accessibility. While it is
+enabled, every left-button press, drag and release passes through the agent.
+
 A missing key leaves that setting of the mouse alone. An invalid file is
 rejected as a whole (`magiclogictl check` shows the faulty line): at startup
 the mouse is left unchanged, on reload the previous configuration is kept.
@@ -171,12 +191,14 @@ direction stay in the mouse until it is switched off and on, or
   access. A button is taken over (HID++ "diversion") only if you remap it; the
   mouse then stops sending its native event, so there are no duplicates and
   nothing else is filtered.
-- **No event tap unless `[zoom]` is enabled.** The zoom then uses one tap that
-  receives **scroll events only** (never keyboard, clicks or motion). It reads
-  each event's deltas, modifier flags and target application; an event is
-  absorbed only when the modifier is held over a listed application. Nothing
-  is stored or logged. If the agent stops or crashes, the tap disappears with
-  it and scrolling is native at once.
+- **No event tap unless `[zoom]` or `[pan]` is enabled.** The zoom then uses
+  one tap that receives **scroll events only**; the pan one that receives
+  **left-button events only** (press, drag, release). Neither ever sees the
+  keyboard or plain motion. They read each event's deltas, modifier flags and
+  target application; an event is absorbed only when the modifier is held
+  over a listed application. Nothing is stored or logged. If the agent stops
+  or crashes, the taps disappear with it and scrolling and clicks are native
+  at once.
 - One process, one thread, event-driven: **0.0 % CPU and 1 wake-up per minute
   at rest**, about 5 MB of memory.
 - A diversion survives a crash of the agent (verified): `launchd` restarts it

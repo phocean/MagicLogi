@@ -133,13 +133,6 @@ final class ScrollZoom {
         // Never act on our own events (we post none of this type; belt and braces).
         if event.getIntegerValueField(.eventSourceUserData) == Injector.marker { return Unmanaged.passUnretained(event) }
 
-        let f = event.flags
-        var held: KeyModifiers = []
-        if f.contains(.maskCommand) { held.insert(.command) }
-        if f.contains(.maskAlternate) { held.insert(.option) }
-        if f.contains(.maskControl) { held.insert(.control) }
-        if f.contains(.maskShift) { held.insert(.shift) }
-
         let pid = pid_t(truncatingIfNeeded: event.getIntegerValueField(.eventTargetUnixProcessID))
         var dy = Double(event.getIntegerValueField(.scrollWheelEventPointDeltaAxis1))
         var dx = Double(event.getIntegerValueField(.scrollWheelEventPointDeltaAxis2))
@@ -148,7 +141,7 @@ final class ScrollZoom {
             dx = event.getDoubleValueField(.scrollWheelEventFixedPtDeltaAxis2) * 10
         }
         let momentum = event.getIntegerValueField(.scrollWheelEventMomentumPhase) != 0
-        let decision = tracker.handle(held: held,
+        let decision = tracker.handle(held: KeyModifiers(eventFlags: event.flags),
                                       isTarget: { ProcessBundle.identifier(pid).map(apps.contains) ?? false },
                                       dy: dy, dx: dx, momentum: momentum,
                                       at: ProcessInfo.processInfo.systemUptime, config: config, natural: natural)

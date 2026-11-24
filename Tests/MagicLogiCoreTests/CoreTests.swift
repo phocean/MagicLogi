@@ -535,3 +535,74 @@ final class ZoomTests: XCTestCase {
         }
     }
 }
+
+final class PanTests: XCTestCase {
+    private func enabled() -> PanConfig { var p = PanConfig(); p.enabled = true; return p }
+
+    func testConfigDefaultsAndParse() throws {
+        XCTAssertFalse(try Config.parse("").pan.enabled)
+        let cfg = try Config.parse("[pan]\nenabled = true")
+        XCTAssertTrue(cfg.pan.enabled)
+        XCTAssertEqual(cfg.pan.modifier, .option)
+        XCTAssertEqual(cfg.pan.apps, ["com.apple.Preview"])
+        XCTAssertTrue(cfg.needsEventPosting)
+        XCTAssertTrue(cfg.summary.hasSuffix("pan=alt+drag apps=com.apple.Preview"))
+        let full = try Config.parse("[pan]\nenabled = true\nmodifier = \"shift\"\napps = [\"com.example.Viewer\"]").pan
+        XCTAssertEqual(full.modifier, .shift)
+        XCTAssertEqual(full.apps, ["com.example.Viewer"])
+    }
+
+    func testConfigErrors() {
+        for bad in ["[pan]\nenabled = \"yes\"", "[pan]\nmodifier = \"ctrl\"", "[pan]\napps = []",
+                    "[pan]\napps = [\"Preview\"]", "[pan]\nstep = 3"] {
+            XCTAssertThrowsError(try Config.parse(bad), bad)
+        }
+    }
+
+    func testOtherPressesAreLeftAlone() {
+        var t = PanTracker()
+        var asked = false
+        // Disabled, no modifier, another modifier, two modifiers: never taken, target not even looked up.
+        let cases: [(KeyModifiers, PanConfig)] = [(.option, PanConfig()), ([], enabled()), (.command, enabled()), ([.option, .shift], enabled())]
+        for (held, cfg) in cases {
+            XCTAssertEqual(t.handle(.down, held: held, isTarget: { asked = true; return true }, config: cfg), .pass)
+            XCTAssertEqual(t.handle(.dragged(dx: 5, dy: 5), held: held, isTarget: { true }, config: cfg), .pass)
+            XCTAssertEqual(t.handle(.up, held: held, isTarget: { true }, config: cfg), .pass)
+        }
+        XCTAssertFalse(asked)
+        // Right modifier, other application.
+        XCTAssertEqual(t.handle(.down, held: .option, isTarget: { false }, config: enabled()), .pass)
+        XCTAssertEqual(t.handle(.dragged(dx: 5, dy: 5), held: .option, isTarget: { true }, config: enabled()), .pass)
+        XCTAssertEqual(t.handle(.up, held: .option, isTarget: { true }, config: enabled()), .pass)
+    }
+
+    func testModifierPressedDuringAPlainDragChangesNothing() {
+        var t = PanTracker()
+        XCTAssertEqual(t.handle(.down, held: [], isTarget: { true }, config: enabled()), .pass)
+        XCTAssertEqual(t.handle(.dragged(dx: 3, dy: 0), held: .option, isTarget: { true }, config: enabled()), .pass)
+        XCTAssertEqual(t.handle(.up, held: .option, isTarget: { true }, config: enabled()), .pass)
+    }
+
+    func testGrabTakesTheWholePressAndFollowsThePointer() {
+        var t = PanTracker()
+        let c = enabled()
+        XCTAssertEqual(t.handle(.down, held: .option, isTarget: { true }, config: c), .absorb)
+        XCTAssertTrue(t.active)
+        // Releasing the modifier mid-drag keeps the drag going.
+        XCTAssertEqual(t.handle(.dragged(dx: 4, dy: -7), held: [], isTarget: { false }, config: c),
+                       .scroll(vertical: -7, horizontal: 4))
+        XCTAssertEqual(t.handle(.dragged(dx: 0, dy: 0), held: [], isTarget: { true }, config: c), .absorb)
+        XCTAssertEqual(t.handle(.dragged(dx: .nan, dy: 1), held: [], isTarget: { true }, config: c), .absorb)
+        XCTAssertEqual(t.handle(.up, held: [], isTarget: { true }, config: c), .absorb)
+        XCTAssertFalse(t.active)
+        XCTAssertEqual(t.handle(.dragged(dx: 1, dy: 1), held: .option, isTarget: { true }, config: c), .pass)
+    }
+
+    func testANewPressNeverStaysStuck() {
+        var t = PanTracker()
+        XCTAssertEqual(t.handle(.down, held: .option, isTarget: { true }, config: enabled()), .absorb)
+        // Release never seen; the next plain press starts afresh.
+        XCTAssertEqual(t.handle(.down, held: [], isTarget: { true }, config: enabled()), .pass)
+        XCTAssertFalse(t.active)
+    }
+}

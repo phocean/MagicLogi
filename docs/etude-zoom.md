@@ -279,3 +279,44 @@ pendant une attente HID++ de l'agent (§4.1), latence et CPU (tests 9-10).
 Toujours **[à vérifier]** : Aperçu en arrière-plan sous le pointeur (test 8),
 sens avec défilement naturel désactivé, retrait de l'Accessibilité en marche
 (test 12), arrêt et relance de MagicTrackpoint (test 13), latence sur la durée.
+
+## 10. Suite : déplacement par ⌥ + glisser (1.2.0)
+
+Besoin constaté à l'usage : sur une image, Aperçu n'offre que des outils de
+sélection (menu Outils : Sélection automatique, rectangulaire, de texte…),
+pas de « main ». Au trackpad on déplace l'image à deux doigts ; à la souris,
+le glissé dessine un cadre de sélection.
+
+Choix du déclencheur. Tout modificateur a déjà un sens avec un glissé
+quelque part : ⌥ copie dans le Finder et sélectionne en colonne dans les
+éditeurs, ⇧ étend une sélection presque partout, ⌘ ajoute à une sélection ou
+déplace une fenêtre en arrière-plan, ⌃-clic est le clic droit. Espace +
+glisser (convention des logiciels de dessin) demanderait d'intercepter le
+clavier : exclu. Retenu : **⌥ + clic gauche glissé, limité à une liste
+d'applications** (Aperçu par défaut), modificateur réglable.
+
+Conception : un second tap, bouton gauche seul (appui, glissé, relâché), au
+même niveau que celui du zoom. Un appui fait avec le modificateur seul
+au-dessus d'une application de la liste est pris en entier ; chaque glissé
+devient un défilement en pixels de la même distance, le contenu suivant la
+main. Indépendant du matériel comme le zoom.
+
+Mesures (2026-11-24) :
+
+1. Défilement envoyé par `CGEventPostToPid` : appuis bien pris (une
+   quarantaine de défilements par glissé au journal), **image immobile**.
+   Contrairement aux touches du zoom, un défilement doit passer par
+   l'aiguillage de la session vers la fenêtre sous le pointeur.
+2. Posté au niveau session avec la position fixée au point de l'appui :
+   **tremblements avant/arrière**. Probable : la position ramène le pointeur
+   au point d'appui, et le mouvement suivant est compté depuis là.
+3. Posté au niveau session, position laissée à macOS (comme MagicTrackpoint) :
+   **l'image suit la souris** (utilisateur). Un glissé horizontal : 47
+   défilements, 1 490 px horizontaux, 4 px verticaux.
+
+Clics sans ⌥, dans Aperçu et ailleurs : inchangés (utilisateur). Limite
+assumée : dans les applications de la liste, ⌥-clic n'est plus transmis.
+
+Toujours **[à vérifier]** : sens du déplacement avec le défilement naturel
+désactivé (le défilement synthétique ne devrait pas être inversé par macOS),
+glissé qui sort de la fenêtre d'Aperçu, retrait de l'Accessibilité en marche.

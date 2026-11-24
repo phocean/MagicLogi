@@ -44,6 +44,8 @@ public struct Config: Equatable, Sendable {
     public var gestureThreshold = 130
     /// Modifier + scroll = zoom ([zoom]); off unless enabled.
     public var zoom = ZoomConfig()
+    /// Modifier + left-button drag = move the document ([pan]); off unless enabled.
+    public var pan = PanConfig()
 
     public static let dpiRange = 200...4000
     public static let gestureThresholdRange = 20...5000
@@ -54,9 +56,9 @@ public struct Config: Equatable, Sendable {
 
     public func action(for control: Control) -> ButtonAction { buttons[control] ?? .native }
 
-    /// True if a button or the zoom needs the Accessibility permission.
+    /// True if a button, the zoom or the pan needs the Accessibility permission.
     public var needsEventPosting: Bool {
-        zoom.enabled || Control.allCases.contains { action(for: $0).needsEventPosting }
+        zoom.enabled || pan.enabled || Control.allCases.contains { action(for: $0).needsEventPosting }
     }
 
     public static var defaultPath: String {
@@ -75,6 +77,7 @@ public struct Config: Equatable, Sendable {
             "buttons": Set(Control.allCases.map(\.rawValue)),
             "gestures": Set(GestureSlot.allCases.map(\.rawValue) + ["threshold"]),
             "zoom": ["enabled", "modifier", "step", "invert", "apps"],
+            "pan": ["enabled", "modifier", "apps"],
         ]
         for (table, keys) in doc.tables {
             guard let allowed = known[table] else {
@@ -127,6 +130,7 @@ public struct Config: Equatable, Sendable {
             cfg.gestures[slot] = action
         }
         cfg.zoom = try parseZoom(doc.tables["zoom"] ?? [:])
+        cfg.pan = try parsePan(doc.tables["pan"] ?? [:])
         return cfg
     }
 
@@ -139,18 +143,7 @@ public struct Config: Equatable, Sendable {
             z.enabled = v
         }
         if let e = t["modifier"] {
-            guard case .string(let s) = e.value else {
-                throw TOMLError(line: e.line, message: "modifier must be a string, got \(e.value.typeName)")
-            }
-            switch s.lowercased() {
-            case "cmd", "command": z.modifier = .command
-            case "opt", "option", "alt": z.modifier = .option
-            case "shift": z.modifier = .shift
-            case "ctrl", "control":
-                throw TOMLError(line: e.line, message: "modifier \"\(s)\" is refused: control + scroll is macOS's own screen zoom (Accessibility); use cmd, alt or shift")
-            default:
-                throw TOMLError(line: e.line, message: "unknown modifier \"\(s)\" (use cmd, alt or shift)")
-            }
+            z.modifier = try parseModifier(e, controlRefused: "control + scroll is macOS's own screen zoom (Accessibility)")
         }
         if let e = t["step"] {
             guard case .integer(let v) = e.value, ZoomConfig.stepRange.contains(v) else {
@@ -164,17 +157,55 @@ public struct Config: Equatable, Sendable {
             }
             z.invert = v
         }
-        if let e = t["apps"] {
-            guard case .strings(let list) = e.value else {
-                throw TOMLError(line: e.line, message: "apps must be a list of bundle identifiers, e.g. [\"com.apple.Preview\"]")
-            }
-            guard !list.isEmpty else { throw TOMLError(line: e.line, message: "apps is empty (set enabled = false instead)") }
-            for id in list where !ZoomConfig.isValidBundleID(id) {
-                throw TOMLError(line: e.line, message: "\"\(id)\" is not a bundle identifier (e.g. com.apple.Preview)")
-            }
-            z.apps = list
-        }
+        if let e = t["apps"] { z.apps = try parseApps(e) }
         return z
+    }
+
+    private static func parsePan(_ t: [String: (value: TOMLValue, line: Int)]) throws -> PanConfig {
+        var p = PanConfig()
+        if let e = t["enabled"] {
+            guard case .boolean(let v) = e.value else {
+                throw TOMLError(line: e.line, message: "enabled must be true or false, got \(e.value.typeName)")
+            }
+            p.enabled = v
+        }
+        if let e = t["modifier"] {
+            p.modifier = try parseModifier(e, controlRefused: "control + click is a right click on macOS")
+        }
+        if let e = t["apps"] { p.apps = try parseApps(e) }
+        return p
+    }
+
+    /// One modifier among cmd, alt, shift; control is refused with `controlRefused` as the reason.
+    private static func parseModifier(_ e: (value: TOMLValue, line: Int), controlRefused: String) throws -> KeyModifiers {
+        guard case .string(let s) = e.value else {
+            throw TOMLError(line: e.line, message: "modifier must be a string, got \(e.value.typeName)")
+        }
+        switch s.lowercased() {
+        case "cmd", "command": return .command
+        case "opt", "option", "alt": return .option
+        case "shift": return .shift
+        case "ctrl", "control":
+            throw TOMLError(line: e.line, message: "modifier \"\(s)\" is refused: \(controlRefused); use cmd, alt or shift")
+        default:
+            throw TOMLError(line: e.line, message: "unknown modifier \"\(s)\" (use cmd, alt or shift)")
+        }
+    }
+
+    /// A non-empty list of bundle identifiers.
+    private static func parseApps(_ e: (value: TOMLValue, line: Int)) throws -> [String] {
+        guard case .strings(let list) = e.value else {
+            throw TOMLError(line: e.line, message: "apps must be a list of bundle identifiers, e.g. [\"com.apple.Preview\"]")
+        }
+        guard !list.isEmpty else { throw TOMLError(line: e.line, message: "apps is empty (set enabled = false instead)") }
+        for id in list where !ZoomConfig.isValidBundleID(id) {
+            throw TOMLError(line: e.line, message: "\"\(id)\" is not a bundle identifier (e.g. com.apple.Preview)")
+        }
+        return list
+    }
+
+    private static func modifierName(_ m: KeyModifiers) -> String {
+        m == .command ? "cmd" : m == .option ? "alt" : "shift"
     }
 
     /// One-line human summary for the log.
@@ -188,8 +219,10 @@ public struct Config: Equatable, Sendable {
             parts.append("gesture_threshold=\(gestureThreshold)")
         }
         if zoom.enabled {
-            let mod = zoom.modifier == .command ? "cmd" : zoom.modifier == .option ? "alt" : "shift"
-            parts.append("zoom=\(mod)+scroll step=\(zoom.step)\(zoom.invert ? " inverted" : "") apps=\(zoom.apps.joined(separator: ","))")
+            parts.append("zoom=\(Config.modifierName(zoom.modifier))+scroll step=\(zoom.step)\(zoom.invert ? " inverted" : "") apps=\(zoom.apps.joined(separator: ","))")
+        }
+        if pan.enabled {
+            parts.append("pan=\(Config.modifierName(pan.modifier))+drag apps=\(pan.apps.joined(separator: ","))")
         }
         return parts.joined(separator: " ")
     }

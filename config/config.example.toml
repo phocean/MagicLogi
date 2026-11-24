@@ -91,3 +91,21 @@ threshold = 130
 # invert = false                 # true : vers le haut = réduire
 # apps = ["com.apple.Preview"]   # identifiants de bundle (défaut : Aperçu)
 #                                # ex. : osascript -e 'id of app "Aperçu"'
+# Firefox n'en a pas besoin : about:config, mousewheel.with_meta.action = 3.
+
+# [pan]
+# Modificateur + clic gauche glissé = déplacer le document (outil « main »),
+# pour les applications qui n'en ont pas (images dans Aperçu). Désactivé tant
+# que cette section est absente ou enabled = false. Activé, l'agent reçoit
+# chaque appui, glissé et relâché du BOUTON GAUCHE (jamais le clavier, les
+# autres boutons ni les simples mouvements), de tout périphérique. Un appui
+# fait avec le modificateur au-dessus d'une application de la liste n'est
+# jamais vu par elle (⌥-clic n'y fait plus rien) ; le glissé y devient un
+# défilement, le document suit la main. Les autres clics ne sont pas touchés.
+# Limité à une liste : chaque modificateur a déjà un sens avec un glissé
+# ailleurs (⌥ copie dans le Finder, ⇧ étend une sélection).
+# Demande l'autorisation Accessibilité.
+# enabled = true
+# modifier = "alt"               # alt, cmd ou shift (ctrl est refusé :
+#                                # ⌃-clic = clic droit)
+# apps = ["com.apple.Preview"]

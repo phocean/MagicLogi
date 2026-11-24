@@ -34,6 +34,11 @@ final class Agent {
         z.onLost = { [weak self] in self?.writeStatus(); self?.startPermissionTimer() }
         return z
     }()
+    private lazy var pan: DragPan = {
+        let p = DragPan(injector: injector)
+        p.onLost = { [weak self] in self?.writeStatus(); self?.startPermissionTimer() }
+        return p
+    }()
 
     private var device: LogiDevice?
     /// Matched but not opened yet (missing Input Monitoring permission).
@@ -434,12 +439,13 @@ final class Agent {
             }
             stillWaiting = waitingDevice != nil
         }
-        if config.zoom.enabled && !zoom.isActive {
+        let tapsWaiting = { (self.config.zoom.enabled && !self.zoom.isActive) || (self.config.pan.enabled && !self.pan.isActive) }
+        if tapsWaiting() {
             if Injector.allowed {
                 log.notice("Accessibility granted")
                 updateZoom()
             }
-            if !zoom.isActive { stillWaiting = true }
+            if tapsWaiting() { stillWaiting = true }
         }
         if device != nil && config.needsEventPosting {
             if Injector.allowed {
@@ -492,16 +498,29 @@ final class Agent {
         }
     }
 
-    // MARK: Zoom (modifier + scroll)
+    // MARK: Zoom (modifier + scroll) and pan (modifier + drag)
 
-    /// Starts, updates or stops the scroll tap to match the configuration.
-    /// Independent of the mouse: works with any pointing device.
+    /// Starts, updates or stops the scroll tap ([zoom]) and the left-button
+    /// tap ([pan]) to match the configuration. Independent of the mouse:
+    /// they work with any pointing device.
     private func updateZoom() {
         defer { writeStatus() }
-        guard config.zoom.enabled else { zoom.stop(); return }
-        if Injector.allowed && zoom.start(config.zoom) { return }
-        zoom.stop()
-        log.error("zoom: Accessibility not granted; scrolling stays native until it is (System Settings > Privacy & Security > Accessibility > magiclogid)")
+        var missing = false
+        if !config.zoom.enabled {
+            zoom.stop()
+        } else if !(Injector.allowed && zoom.start(config.zoom)) {
+            zoom.stop()
+            missing = true
+            log.error("zoom: Accessibility not granted; scrolling stays native until it is (System Settings > Privacy & Security > Accessibility > magiclogid)")
+        }
+        if !config.pan.enabled {
+            pan.stop()
+        } else if !(Injector.allowed && pan.start(config.pan)) {
+            pan.stop()
+            missing = true
+            log.error("pan: Accessibility not granted; clicks stay native until it is (System Settings > Privacy & Security > Accessibility > magiclogid)")
+        }
+        guard missing else { return }
         if !askedAccessibility { askedAccessibility = true; _ = CGRequestPostEventAccess() }
         startPermissionTimer()
     }
@@ -558,6 +577,7 @@ final class Agent {
     /// the process exits (verified), so they must be undone here.
     private func finishStop() -> Never {
         zoom.stop()
+        pan.stop()
         releaseHeld()
         if let dev = device, !dev.gone {
             // Every managed control, not only those we believe diverted: the
@@ -599,6 +619,7 @@ final class Agent {
         let names = diverted.sorted().compactMap { Control(cid: $0)?.rawValue }
         lines.append("diverted=\(names.isEmpty ? "none" : names.joined(separator: ","))")
         lines.append("zoom=\(!config.zoom.enabled ? "off" : zoom.isActive ? "on" : "waiting-accessibility")")
+        lines.append("pan=\(!config.pan.enabled ? "off" : pan.isActive ? "on" : "waiting-accessibility")")
         lines.append("conflicts=\(conflicts.isEmpty ? "none" : conflicts.map(\.name).joined(separator: ","))")
         StatusFile.write(lines.joined(separator: "\n") + "\n")
     }
